@@ -51,7 +51,7 @@ class UrlDownload:
     if ratelimit > 0:
       while download_concurrency >= ratelimit: time.sleep(10)
       download_concurrency += 1
-    
+
     # Download from url to file.
     if ratelimit > 0: log.info("Start download of " + url)
     conn = urllib2.urlopen(url)
@@ -64,7 +64,7 @@ class UrlDownload:
         f.write(chunk)
         task.increment(total_bytes, len(chunk))
         task.increment(bytes, len(chunk))
-    if ratelimit > 0: download_concurrency -= 1 
+    if ratelimit > 0: download_concurrency -= 1
     log.info(name + " downloaded")
 	
 register_task("url-download", UrlDownload)

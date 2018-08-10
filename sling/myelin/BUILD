@@ -31,6 +31,16 @@ cc_library(
 )
 
 cc_library(
+  name = "simd-assembler",
+  srcs = ["simd-assembler.cc"],
+  hdrs = ["simd-assembler.h"],
+  deps = [
+    ":compute",
+    "//sling/base",
+  ],
+)
+
+cc_library(
   name = "profile",
   srcs = ["profile.cc"],
   hdrs = ["profile.h"],
@@ -144,6 +154,24 @@ cc_binary(
     "//sling/myelin/cuda:cuda-runtime",
     "//sling/myelin/kernel:cuda",
     "//sling/myelin/kernel:dragnn",
+    "//sling/myelin/kernel:tensorflow",
+  ],
+)
+
+cc_library(
+  name = "compiler",
+  srcs = ["compiler.cc"],
+  hdrs = ["compiler.h"],
+  deps = [
+    ":compute",
+    ":elf-linker",
+    ":flow",
+    ":graph",
+    ":profile",
+    "//sling/base",
+    "//sling/base:perf",
+    "//sling/myelin/cuda:cuda-runtime",
+    "//sling/myelin/kernel:cuda",
     "//sling/myelin/kernel:tensorflow",
   ],
 )
