@@ -15,7 +15,6 @@
 """Wrapper classes for document, token, and mention frames"""
 
 import sling
-import sling.pysling as api
 
 # Token break types.
 NO_BREAK = 0
@@ -135,6 +134,11 @@ class Mention(object):
   def evoke(self, evoked):
     return self.frame.append(self.schema.phrase_evokes, evoked)
 
+  def evoke_type(self, frame_type):
+    f = self.frame.store().frame({self.schema.isa: frame_type})
+    self.evoke(f)
+    return f
+
 
 class Document(object):
   def __init__(self, frame=None, store=None, schema=None):
@@ -199,6 +203,15 @@ class Document(object):
     self.mentions.append(mention)
     self.mentions_dirty = True
     return mention
+
+  def evoke(self, begin, end, frame):
+    mention = self.add_mention(begin, end)
+    mention.evoke(frame)
+    return frame
+
+  def evoke_type(self, begin, end, frame_type):
+    mention = self.add_mention(begin, end)
+    return mention.evoke_type(frame_type)
 
   def add_theme(self, theme):
     self.themes.append(theme)

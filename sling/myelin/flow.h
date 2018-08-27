@@ -298,6 +298,7 @@ class Flow {
       REF = 4,        // reference variable
       LEARNABLE = 8,  // learnable global variable
       UNIQUE = 16,    // input with single gradient
+      RANDOM = 32,    // initialize with random values
     };
 
     // Add alias for variable.
@@ -346,6 +347,15 @@ class Flow {
     }
     Variable *clear_unique(bool disable = true) {
       return clear(UNIQUE, disable);
+    }
+
+    // Random intialize flag.
+    bool random() const { return is(RANDOM); }
+    Variable *set_random(bool enable = true) {
+      return set(RANDOM, enable);
+    }
+    Variable *clear_random(bool disable = true) {
+      return clear(RANDOM, disable);
     }
 
     // Check if variable is a constant.
@@ -605,6 +615,15 @@ class Flow {
   // Look up blob by name.
   Blob *DataBlock(const string &name);
 
+  // Return corresponding gradient variable.
+  Variable *GradientVar(Variable *var);
+
+  // Return corresponding gradient function.
+  Function *GradientFunc(Function *func);
+
+  // Return primal variable for function.
+  Variable *PrimalVar(Function *func);
+
   // Return flow in text format.
   string ToString() const;
 
@@ -776,6 +795,15 @@ class Transformations {
   // Gradient components.
   std::unordered_map<string, GradientFunc *> gradients_;
 };
+
+// Return name of corresponding gradient variable.
+string GradientVarName(const string &name);
+
+// Return name of corresponding gradient function.
+string GradientFuncName(const string &name);
+
+// Return name of primal variable in gradient function.
+string PrimalVarName(const string &name);
 
 }  // namespace myelin
 }  // namespace sling

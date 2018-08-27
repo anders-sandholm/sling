@@ -252,6 +252,20 @@ class Losses:
       s += str(l[0].data[0] / l[1])
     return s
 
+  # Returns a dict where all values are numbers instead of tensors/variables.
+  def tonum(self):
+    output = {}
+    total = 0
+    total_count = 0
+    for k,v in self.losses.iteritems():
+      output[k] = (v[0].data[0], v[1])
+      total += v[0].data[0]
+      total_count += v[1]
+      assert type(total) is float 
+      assert type(total_count) is int
+    output["total"] = (total, total_count)
+    return output
+
 
 # Asserts 'delegate' to be a softmax delegate.
 def assert_softmax_delegate(delegate):
@@ -544,9 +558,8 @@ class Caspar(nn.Module):
       return state, disallowed_counts, total_counts
 
 
-  # Writes model as a Myelin flow to 'flow_file'.
-  def write_flow(self, flow_file):
-    fl = flow.Flow()
+  # Writes model as a Myelin flow to 'fl'.
+  def write_flow(self, fl):
     spec = self.spec
 
     # Specify the encoder.
@@ -649,15 +662,9 @@ class Caspar(nn.Module):
 
     finish_concat_op(ff, ff_concat_op)
 
-    delegate_cell_prefix = "delegate"
-    cascade = spec.cascade
-    cascade_blob = fl.blob("cascade")
-    store = sling.Store(spec.commons)
-    cascade_blob.data = cascade.as_frame(
-        store, delegate_cell_prefix).data(binary=True)
-
     # Specify one cell per FF head (= delegate).
     ff_trunk_width = flow_ff.hidden_out.shape[1]
+    delegate_cell_prefix = "delegate"
     for i, head in enumerate(self.ff_heads):
       delegate = spec.cascade.delegates[i]
       assert_softmax_delegate(delegate)
@@ -683,6 +690,4 @@ class Caspar(nn.Module):
       best.shape = [1]
       best_op.add_output(best)
       best.producer.add_attr("output", 1)
-
-    fl.save(flow_file)
 
