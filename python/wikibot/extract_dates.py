@@ -1,6 +1,3 @@
-#!/usr/bin/python2.7
-# -*- coding: utf-8 -*-
-
 # Copyright 2017 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,6 +37,11 @@ class ExtractDates:
       self.kb['Q36507'],    # millennium
     ]
     self.human = self.kb['Q5']
+    self.item = self.kb["item"]
+    self.facts = self.kb["facts"]
+    self.provenance = self.kb["provenance"]
+    self.category = self.kb["category"]
+    self.method = self.kb["method"]
 
     self.calendar = sling.Calendar(self.kb)
     self.names = sling.PhraseTable(self.kb,
@@ -47,7 +49,7 @@ class ExtractDates:
     self.kb.freeze()
     self.date_type = {}
     self.conflicts = 0
-    self.out_file = "local/data/e/wikibot/birth_dates.rec"
+    self.out_file = "local/data/e/wikibot/birth-dates.rec"
 
   def find_date(self, phrase):
     for item in self.names.lookup(phrase):
@@ -73,7 +75,7 @@ class ExtractDates:
         date = self.find_date(m.group(1))
         if date is not None:
           cats[item] = date
-    print "Done with dated categories", pattern, len(cats)
+    print len(cats), " dated categories found for pattern", pattern
     return cats
 
   def most_specific_date(self, dates):
@@ -95,15 +97,6 @@ class ExtractDates:
     return None
 
   def find_births(self):
-    globals = sling.Store()
-    n_item = globals["item"]
-    n_facts = globals["facts"]
-    n_date_of_birth = globals["P569"]
-    n_provenance = globals["provenance"]
-    n_category = globals["category"]
-    n_method = globals["method"]
-    globals.freeze()
-
     record_file = sling.RecordWriter(self.out_file)
     records = 0
 
@@ -115,24 +108,24 @@ class ExtractDates:
       for cat in item(self.item_category):
         cat_birth_date = self.birth_cats.get(cat)
         if cat_birth_date is None: continue
-        cat_dates.append((cat,cat_birth_date))
+        cat_dates.append((cat, cat_birth_date))
       if not cat_dates: continue # no birth categories found for item
       msd = self.most_specific_date(cat_dates)
       if msd is None: continue
       (birth_cat, birth_date) = msd
       records += 1
-      store = sling.Store(globals)
+      store = sling.Store(self.kb)
       facts = store.frame({
-        n_date_of_birth: self.calendar.value(sling.Date(birth_date))
+        self.date_of_birth: self.calendar.value(sling.Date(birth_date))
       })
       provenance = store.frame({
-        n_category: store[birth_cat.id],
-        n_method: "Member of a birth category, '" + birth_cat.name + "'"
+        self.category: birth_cat,
+        self.method: "Member of a birth category, '" + birth_cat.name + "'"
       })
       fact = store.frame({
-        n_item: store[item.id],
-        n_facts: facts,
-        n_provenance: provenance
+        self.item: item,
+        self.facts: facts,
+        self.provenance: provenance
       })
       record_file.write(item.id, fact.data(binary=True))
 
@@ -144,6 +137,7 @@ class ExtractDates:
     self.birth_cats = self.dated_categories("Category:(.+) births")
     self.find_births()
 
-extract_dates = ExtractDates()
-extract_dates.run()
+if __name__ == '__main__':
+  extract_dates = ExtractDates()
+  extract_dates.run()
 
