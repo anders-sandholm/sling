@@ -40,11 +40,14 @@ class DocumentSchema:
     self.token_start = store['start']
     self.token_size = store['size']
     self.token_break = store['break']
+    self.token_pos = store['postag']
 
     self.phrase = store['phrase']
     self.phrase_begin = store['begin']
     self.phrase_length = store['length']
     self.phrase_evokes = store['evokes']
+
+    self.thing = store['thing']
 
 
 class Token(object):
@@ -56,7 +59,14 @@ class Token(object):
 
   @property
   def word(self):
-    return self.frame[self.schema.token_word]
+    text = self.frame[self.schema.token_word]
+    if text == None:
+      start = self.frame[self.schema.token_start]
+      if start != None:
+        size = self.frame[self.schema.token_size]
+        if size == None: size = 1
+        text = self.document._text[start : start + size]
+    return text
 
   @word.setter
   def word(self, value):
@@ -149,6 +159,7 @@ class Document(object):
     # Initialize document from frame.
     self.frame = frame
     self.schema = schema
+    self._text = frame[schema.document_text]
     self.tokens = []
     self.mentions = []
     self.themes = []
@@ -237,10 +248,11 @@ class Document(object):
 
   @property
   def text(self):
-    return self.frame[self.schema.document_text]
+    return self._text
 
   @text.setter
   def text(self, value):
+    self._text = value
     self.frame[self.schema.document_text] = value
 
   def phrase(self, begin, end):
@@ -262,7 +274,7 @@ class Document(object):
       if t.frame.word == None: t.word = self.text[t.start:t.end]
       index += 1
     for m in self.mentions:
-      if m.frame.name == None:
+      if m.frame.name is None:
         m.frame.name = self.phrase(m.begin, m.end)
 
   def remove_annotations(self):

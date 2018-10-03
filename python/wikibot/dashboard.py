@@ -33,7 +33,7 @@ precision_map = {
   sling.DAY: pywikibot.WbTime.PRECISION['day']
 }
 
-class Dashboard:
+class WikiMonitor:
   def __init__(self):
     self.site = pywikibot.Site("wikidata", "wikidata")
     self.repo = self.site.data_repository()
@@ -48,7 +48,6 @@ class Dashboard:
     self.n_facts = self.store["facts"]
     self.n_status = self.store["status"]
     self.n_revision = self.store["revision"]
-    #self.n_url = self.store["url"]
     self.n_skipped = self.store["skipped"]
     self.store.freeze()
 
@@ -109,6 +108,6 @@ class Dashboard:
 
 if __name__ == '__main__':
   flags.parse()
-  sfb = Dashboard()
+  sfb = WikiMonitor()
   sfb.run()
 
