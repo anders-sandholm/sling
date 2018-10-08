@@ -56,7 +56,7 @@ class StoreFactsBot:
       time_str = "test-" + time_str
     else:
       record_file_name = "local/data/e/wikibot/birth-dates.rec"
-    status_file_name = "local/data/e/wikibot/wikibotlog-"+time_str+".rec"
+    status_file_name = "local/logs/wikibotlog-"+time_str+".rec"
     self.record_file = sling.RecordReader(record_file_name)
     self.status_file = sling.RecordWriter(status_file_name)
 
@@ -175,7 +175,6 @@ class StoreFactsBot:
         cat_str = str(provenance[self.n_category])
         summary = provenance[self.n_method] + " " + cat_str
         wd_item.addClaim(claim, summary=summary)
-        claim.addSources(self.getSources(cat_str))
         rev_id = str(wd_item.latest_revision_id)
         claim.addSources(self.get_sources(cat_str))
         self.log_status_stored(item, fact, rev_id)
