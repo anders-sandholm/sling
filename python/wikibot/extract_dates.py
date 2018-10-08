@@ -237,12 +237,12 @@ class ExtractDates:
     print 1, "birth date records written to file:", test_file
 
   def run(self):
-    birth_cats = self.dated_categories("Category:(.+) births")
-    self.find_births(birth_cats)
+    #birth_cats = self.dated_categories("Category:(.+) births")
+    #self.find_births(birth_cats)
     # death_cats = self.dated_categories("Category:(.+) deaths")
     # self.find_deaths(death_cats)
-    #inc_cats = self.dated_categories("Category:(.+) established in (.+)", 2)
-    #self.find_inceptions(inc_cats)
+    inc_cats = self.dated_categories("Category:(.+) established in (.+)", 2)
+    self.find_inceptions(inc_cats)
 
 if __name__ == '__main__':
   extract_dates = ExtractDates()

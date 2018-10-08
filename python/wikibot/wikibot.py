@@ -131,9 +131,11 @@ class StoreFactsBot:
     updated = 0
     recno = 0
     for item_str, record in records:
-      if recno < flags.arg.first: continue
-      if recno > flags.arg.last: break
       recno += 1
+      if recno < flags.arg.first:
+        print "Skipping record number", recno
+        continue
+      if recno > flags.arg.last: break
       if updated >= batch_size:
         print "Hit batch size of", batch_size
         break
@@ -179,11 +181,12 @@ class StoreFactsBot:
         claim.addSources(self.get_sources(cat_str))
         self.log_status_stored(item, fact, rev_id)
         updated += 1
-      print item
-    print "Last record.", updated, "records updated."
+      print item, recno
+    print "Last record:", recno, "Total:", updated, "records updated."
+
 
   def run(self):
-    self.store_records(self.record_file, batch_size=2)
+    self.store_records(self.record_file, batch_size=100)
 
 if __name__ == '__main__':
   flags.parse()
