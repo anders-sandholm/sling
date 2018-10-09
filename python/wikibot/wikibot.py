@@ -56,7 +56,7 @@ class StoreFactsBot:
       time_str = "test-" + time_str
     else:
       record_file_name = "local/data/e/wikibot/birth-dates.rec"
-    status_file_name = "local/logs/wikibotlog-"+time_str+".rec"
+    status_file_name = "local/logs/wikibotlog-" + time_str + ".rec"
     self.record_file = sling.RecordReader(record_file_name)
     self.status_file = sling.RecordWriter(status_file_name)
 

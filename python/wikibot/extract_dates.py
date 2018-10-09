@@ -22,6 +22,7 @@ import json
 class ExtractDates:
   def __init__(self):
     self.kb = sling.Store()
+    self.kb.lockgc()
     self.kb.load("local/data/e/wiki/kb.sling", snapshot=True)
     self.instanceof = self.kb['P31']
     self.has_part = self.kb['P527']
@@ -212,40 +213,15 @@ class ExtractDates:
     print records, "birth date records written to file:", self.out_file
     print self.conflicts, "conflicts encountered"
 
-  def test_record(self):
-    store = sling.Store(self.kb)
-    test_file = "local/data/e/wikibot/test-birth-dates.rec"
-    record_file = sling.RecordWriter(test_file)
-    item = store["Q4115189"] # test item
-    birth_cat = store["Q9721210"] # 1960s births
-    birth_date = 196
-    facts = store.frame({
-      self.date_of_birth: self.calendar.value(sling.Date(birth_date))
-    })
-    provenance = store.frame({
-      self.category: birth_cat,
-      self.method: "Member of a birth category, '" + birth_cat.name + "'"
-    })
-    fact = store.frame({
-      self.item: item,
-      self.facts: facts,
-      self.provenance: provenance
-    })
-    record_file.write(item.id, fact.data(binary=True))
-
-    record_file.close()
-    print 1, "birth date records written to file:", test_file
-
   def run(self):
-    #birth_cats = self.dated_categories("Category:(.+) births")
-    #self.find_births(birth_cats)
-    # death_cats = self.dated_categories("Category:(.+) deaths")
-    # self.find_deaths(death_cats)
+    birth_cats = self.dated_categories("Category:(.+) births")
+    self.find_births(birth_cats)
+    death_cats = self.dated_categories("Category:(.+) deaths")
+    self.find_deaths(death_cats)
     inc_cats = self.dated_categories("Category:(.+) established in (.+)", 2)
     self.find_inceptions(inc_cats)
 
 if __name__ == '__main__':
   extract_dates = ExtractDates()
-  #extract_dates.test_record()
   extract_dates.run()
 
