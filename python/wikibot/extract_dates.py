@@ -15,9 +15,15 @@
 """Class for extracting birth date facts and storing them in a record file"""
 
 import sling
+import sling.flags as flags
 import re
 import sys
 import json
+
+flags.define("--prop",
+             help="The property to extract dates for",
+             default="birth",
+             type=str)
 
 class ExtractDates:
   def __init__(self):
@@ -43,6 +49,7 @@ class ExtractDates:
     ]
     self.human = self.kb['Q5']
     self.business = self.kb['Q4830453']
+    self.organization = self.kb['Q43229']
     self.item = self.kb["item"]
     self.facts = self.kb["facts"]
     self.provenance = self.kb["provenance"]
@@ -70,6 +77,29 @@ class ExtractDates:
       "November": 11,
       "December": 12
     }
+
+  def subclasses(self, cls):
+    subcls = {}
+    subcls[int(cls.id[1:len(cls.id)])] = True
+    changed = True
+    while changed:
+      changed = False
+      for item in self.kb:
+        try:
+          num = int(item.id[1:len(item.id)])
+        except:
+          continue
+        if num in subcls: continue
+        for supercls in item(self.subclass):
+          try:
+            supernum = int(supercls.id[1:len(supercls.id)])
+          except:
+            continue
+          if supernum in subcls:
+            changed = True
+            subcls[num] = True
+            break
+    return subcls
 
   def find_date(self, phrase):
     for item in self.names.lookup(phrase):
@@ -113,6 +143,15 @@ class ExtractDates:
         return dt[self.date_types[i]]
     return None
 
+  def is_org(self, item):
+    for cls in item(self.instanceof):
+      try:
+        num = int(cls.id[1:len(cls.id)])
+      except:
+        continue
+      if num in self.org_cls: return True
+    return False
+
   def find_inceptions(self, inc_cats):
     self.out_file = "local/data/e/wikibot/inc-dates.rec"
     record_file = sling.RecordWriter(self.out_file)
@@ -123,7 +162,7 @@ class ExtractDates:
     for item in self.kb:
       if self.wikimedia_category in item(self.instanceof): continue
       if self.human in item(self.instanceof): continue
-      if self.business not in item(self.instanceof): continue
+      if not self.is_org(item): continue
       name = item.name
       if name is not None and name.startswith("Category:"): continue
       if item[self.inception] is not None: continue
@@ -235,14 +274,21 @@ class ExtractDates:
 
 
   def run(self):
-    birth_cats = self.dated_categories("Category:(.+) births")
-    self.find_births(birth_cats)
-    death_cats = self.dated_categories("Category:(.+) deaths")
-    self.find_deaths(death_cats)
-    inc_cats = self.dated_categories("Category:(.+) established in (.+)", 2)
-    self.find_inceptions(inc_cats)
+    if flags.arg.prop == "birth":
+      birth_cats = self.dated_categories("Category:(.+) births")
+      self.find_births(birth_cats)
+    elif flags.arg.prop == "death":
+      death_cats = self.dated_categories("Category:(.+) deaths")
+      self.find_deaths(death_cats)
+    elif flags.arg.prop == "inception":
+      self.org_cls = self.subclasses(self.organization)
+      inc_cats = self.dated_categories("Category:(.+) established in (.+)", 2)
+      self.find_inceptions(inc_cats)
+    else:
+      print "'--prop' flags must be either 'birth', 'death', or 'inception'"
 
 if __name__ == '__main__':
+  flags.parse()
   extract_dates = ExtractDates()
   extract_dates.run()
 
