@@ -85,4 +85,4 @@ sudo ln -s $(realpath python) /usr/lib/python2.7/dist-packages/sling
   on OSX.
 * Similarly, we do not support Windows Subsystem Linux (WSL), but you can check
   out [issue #291](https://github.com/google/sling/issues/291) for help on
-  building on WSL.
+  building on Windows Subsystem Linux (WSL).
