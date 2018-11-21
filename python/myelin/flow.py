@@ -87,7 +87,7 @@ class FileReader:
       f.readinto(b)
     self.view = memoryview(b)
     self.next = 0  # index of next byte to read
-  
+
   def slice(self, size):
     """Returns a slice of given size from the current byte and skips ahead."""
     current = self.next
@@ -264,6 +264,10 @@ class Blob:
       elif value == False: value = 0
     self.attrs[name] = str(value)
 
+  def get_attr(self, name):
+    """Get blob attribute as a string or None."""
+    return self.attrs.get(name, None)
+
 class Flow:
   """Flow with variables, operations, and functions."""
 
@@ -284,7 +288,7 @@ class Flow:
       self.funcs[name] = f
     return f
 
-  def var(self, name, type="float32", shape=[]):
+  def var(self, name, type="float32", shape=None):
     """Add variable to flow."""
     if isinstance(name, Variable): return name
     v = self.vars.get(name, None)
@@ -292,7 +296,7 @@ class Flow:
       v = Variable(name)
       self.vars[name] = v
       v.type = type
-      v.shape = shape
+      if shape != None: v.shape = shape
     return v
 
   def op(self, name):
@@ -522,7 +526,7 @@ class Flow:
       if ref: var.ref = True
       data_size = f.read_long()
       var.data = f.slice(data_size)  # avoid creating a copy
-      
+
     num_ops = f.read_int()
     for _ in xrange(num_ops):
       name = f.read_string()

@@ -17,24 +17,18 @@
 import os
 import sling
 import sling.flags as flags
+from sling.myelin.flow import Flow
 import sys
 import torch
 from functools import partial
 
 sys.path.insert(0, "sling/nlp/parser/trainer")
 import commons_from_corpora as commons_builder
+from corpora import Corpora
 from pytorch_modules import Caspar
-from train_util import Resources, setup_training_flags
+from spec import Spec
 from trainer import Hyperparams, Trainer, dev_accuracy
-
-
-# Checks that all arguments in 'ls' are set in 'args'.
-def check_present(args, ls):
-  for x in ls:
-    val = getattr(args, x, None)
-    assert val is not None, "%r should be present" % x
-    if type(val) is str:
-      assert val != "", "%r should be set" % x
+from train_util import *
 
 
 def train(args):
@@ -46,11 +40,9 @@ def train(args):
   # Make commons store if needed.
   if args.commons == '' or not os.path.exists(args.commons):
     if args.commons == '':
-      import tempfile
-      f = tempfile.NamedTemporaryFile(delete=False)
-      print "Will create a commons store at", f.name
-      args.commons = f.name
-      f.close()
+      fname = os.path.join(args.output_folder, "commons")
+      print "Will create a commons store at", fname
+      args.commons = fname
     else:
       print "No commons found at", args.commons, ", creating it..."
     _, symbols = commons_builder.build(
@@ -58,24 +50,23 @@ def train(args):
     print "Commons created at", args.commons, "with", len(symbols), \
       "symbols besides the usual ones."
 
-  resources = Resources()
-  resources.load(commons_path=args.commons,
-                 train_path=args.train_corpus,
-                 word_embeddings_path=args.word_embeddings,
-                 small_spec=args.small)
+  # Make the training spec.
+  spec = Spec()
+  spec.build(args.commons, args.train_corpus)
 
-  caspar = Caspar(resources.spec)
-  caspar.initialize()
+  # Initialize the model with the spec and any word embeddings.
+  caspar = Caspar(spec)
+  embeddings_file = args.word_embeddings
+  if embeddings_file == '': embeddings_file = None
+  caspar.initialize(embeddings_file)
 
   tmp_folder = os.path.join(args.output_folder, "tmp")
   if not os.path.exists(tmp_folder):
     os.makedirs(tmp_folder)
 
   evaluator = partial(dev_accuracy,
-                      resources.commons_path,
-                      resources.commons,
+                      args.commons,
                       args.dev_corpus,
-                      resources.schema,
                       tmp_folder)
 
   output_file_prefix = os.path.join(args.output_folder, "caspar")
@@ -83,14 +74,11 @@ def train(args):
   print "Using hyperparameters:", hyperparams
 
   trainer = Trainer(caspar, hyperparams, evaluator, output_file_prefix)
-  trainer.train(resources.train)
+  train = Corpora(args.train_corpus, spec.commons, gold=True)
+  trainer.train(train)
 
 
 if __name__ == '__main__':
   setup_training_flags(flags)
-  flags.define('--small',
-               help='Small dimensions (for testing)',
-               default=False,
-               type=bool)
   flags.parse()
   train(flags.arg)

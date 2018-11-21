@@ -15,8 +15,13 @@
 #ifndef SLING_PYAPI_PYBASE_H_
 #define SLING_PYAPI_PYBASE_H_
 
+#ifdef SLING_GOOGLE3
+#include <Python.h>
+#include <structmember.h>
+#else
 #include <python2.7/Python.h>
 #include <python2.7/structmember.h>
+#endif
 #include <vector>
 
 #include "sling/string/text.h"
@@ -32,7 +37,7 @@ inline Dest method_cast(const Source &source) {
   return d.ptr;
 }
 
-// Method table for Python member funtions.
+// Method table for Python member functions.
 class PyMethodTable {
  public:
   // Initialize method table.
@@ -108,6 +113,19 @@ struct PyBase : public PyVarObject {
   // Allocate string.
   static PyObject *AllocateString(Text text) {
     return PyString_FromStringAndSize(text.data(), text.size());
+  }
+
+  // Type checking.
+  static bool TypeCheck(PyObject *object, PyTypeObject *type) {
+    if (!PyObject_TypeCheck(object, type)) {
+      PyErr_BadArgument();
+      return false;
+    } else {
+      return true;
+    }
+  }
+  static bool TypeCheck(PyBase *object, PyTypeObject *type) {
+    return TypeCheck(object->AsObject(), type);
   }
 };
 

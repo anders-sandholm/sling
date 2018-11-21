@@ -31,9 +31,9 @@ from train_util import now
 Var = torch.autograd.Variable
 
 
-# Computes accuracy on the given dev set, using the given PyTorch Caspar module.
-def dev_accuracy(commons_path, commons, dev_path, schema, tmp_folder, caspar):
-  dev = Corpora(dev_path, commons, schema, gold=False, loop=False)
+# Computes accuracy on the given dev set, using the given Caspar module.
+def dev_accuracy(commons_path, dev_path, tmp_folder, caspar):
+  dev = Corpora(dev_path, caspar.spec.commons)
   print "Annotating dev documents", now(), mem()
   test_path = os.path.join(tmp_folder, "dev.annotated.rec")
   writer = sling.RecordWriter(test_path)
@@ -44,8 +44,10 @@ def dev_accuracy(commons_path, commons, dev_path, schema, tmp_folder, caspar):
   dev_total = [0] * cascade.size()
   dev_disallowed = [0] * cascade.size()
   for document in dev:
-    state, disallowed, total = caspar.forward(document, train=False)
+    state, disallowed, total, trace = \
+      caspar.forward(document, train=False, debug=True)
     state.write()
+    trace.write()
     writer.write(str(count), state.encoded())
     count += 1
     if count % 100 == 0:
@@ -200,7 +202,6 @@ class Trainer:
   def update(self):
     if self.count > self.last_update_count:
       self.last_update_count = self.count
-      print self.batch_losses.tostring(self.count)
       start = time.time()
 
       objective = self.batch_losses.average()
@@ -287,7 +288,7 @@ class Trainer:
 
             best_flow_file = self.output_file_prefix + ".best.flow"
             fl = flow.Flow()
-            self.model.write_flow(fl)
+            self.model.to_flow(fl)
             self.save_training_details(fl)
             fl.save(best_flow_file)
             print "Updating best flow at", best_flow_file
