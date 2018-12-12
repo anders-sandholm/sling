@@ -91,20 +91,22 @@ Taxonomy *FactCatalog::CreateDefaultTaxonomy() {
     "Q215380",     // band
     "Q2385804",    // educational institution
     "Q783794",     // company
+    "Q17334923",   // location
     "Q43229",      // organization
+    "Q431289",     // brand
     "Q15474042",   // MediaWiki page
     "Q18616576",   // Wikidata property
+    "Q2188189",    // musical work
+    "Q571",        // book
     "Q732577",     // publication
     "Q11424",      // film
     "Q15416",      // television program
-    "Q2188189",    // musical work
     "Q12136",      // disease
     "Q16521",      // taxon
     "Q5058355",    // cellular component
     "Q7187",       // gene
     "Q11173",      // chemical compound
     "Q811430",     // construction
-    "Q17334923",   // location
     "Q618123",     // geographical object
     "Q1656682",    // event
     "Q101352",     // family name
@@ -117,6 +119,8 @@ Taxonomy *FactCatalog::CreateDefaultTaxonomy() {
     "Q39875001",   // measure
     "Q3695082",    // sign
     "Q2996394",    // biological process
+    "Q11410",      // game
+    "Q7397",       // software
     "Q838948",     // work of art
     "Q47461344",   // written work
     "Q28877",      // goods
@@ -317,7 +321,8 @@ Taxonomy::Taxonomy(const FactCatalog *catalog, const std::vector<Text> &types) {
       LOG(WARNING) << "Ignoring unknown type in taxonomy: " << type;
       continue;
     }
-    typemap_[t] = typemap_.size();
+    int rank = typemap_.size();
+    typemap_[t] = rank;
   }
 }
 
@@ -337,7 +342,6 @@ Handle Taxonomy::Classify(const Frame &item) {
   Handle best = Handle::nil();
   int current = 0;
   while (current < types.size()) {
-    // Check if type is the highest ranked type so far.
     Frame type(store, types[current++]);
     auto f = typemap_.find(type.handle());
     if (f != typemap_.end()) {

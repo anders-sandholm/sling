@@ -41,7 +41,14 @@ class InstanceAllocator;
 class ProfileSummary;
 
 // Element order.
-enum Order {ANY_ORDER, ROW_MAJOR, COLUMN_MAJOR, CONFLICTING_ORDER};
+enum Order {
+  ANY_ORDER,
+  ROW_MAJOR,
+  COLUMN_MAJOR,
+  ROW_MAJOR_PREFERRED,
+  COLUMN_MAJOR_PREFERRED,
+  CONFLICTING_ORDER
+};
 
 // Task state.
 enum TaskState {PENDING, ACTIVE, COMPLETED};
@@ -52,6 +59,7 @@ enum Placement {NOWHERE = 0x0, HOST = 0x1, DEVICE = 0x2, EVERYWHERE = 0x3};
 // Pointer to data in device memory.
 typedef uint64 DevicePtr;
 #define DEVICE_NULL 0
+const size_t NOOFFSET = -1;
 
 // Minimum data alignment.
 static const int kMinDataAlignment = sizeof(void *);
@@ -251,6 +259,12 @@ class Runtime {
     return nullptr;
   }
 
+  // Fetch data block from device. Caller takes ownership of the returned
+  // data buffer.
+  virtual char *FetchDataFromDevice(DevicePtr data, size_t size) {
+    return nullptr;
+  }
+
   // Generate code for transferring data between host and device.
   virtual void EmitTensorTransfers(const Transfers &xfers,
                                    Cell *cell,
@@ -329,7 +343,7 @@ class Tensor {
   bool SupportsOrder(Order order);
 
   // Set required element order.
-  void SetRequiredOrder(Order order);
+  void RequireOrder(Order order);
 
   // Update minimum byte alignment for tensor by combining new alignment
   // with existing constraints.
@@ -340,7 +354,7 @@ class Tensor {
 
   // Require standard row-major order.
   void RequireStandardOrder() {
-    if (rank() > 1 && dim(0) > 1) SetRequiredOrder(ROW_MAJOR);
+    if (rank() > 1 && dim(0) > 1) RequireOrder(ROW_MAJOR);
   }
 
   // Check if tensor has the same shape as another tensor.
@@ -432,12 +446,12 @@ class Tensor {
   // Size (in bytes) of elements in tensor.
   int element_size() const { return TypeTraits::of(type_).size(); }
 
-  // Offset in data instance block. Return -1 for constants and tensors that
-  // are not stored on the host.
+  // Offset in data instance block. Return NOOFFSET for constants and tensors
+  // that are not stored on the host.
   size_t offset() const { return offset_; }
 
-  // Offset in device data instance block. Return -1 for tensors that are not
-  // stored in the instance block on the device.
+  // Offset in device data instance block. Return NOOFFSET for tensors that are
+  // not stored in the instance block on the device.
   size_t device_offset() const { return device_offset_; }
 
   // Number bytes allocated for tensor in instance. This takes references into
@@ -507,6 +521,9 @@ class Tensor {
   // Return tensor placement.
   Placement placement() const { return placement_; }
 
+  // Return tensor reference placement.
+  Placement ref_placement() const { return ref_placement_; }
+
   // Add location for placement.
   void AddPlace(Placement place) {
     placement_ = static_cast<Placement>(placement_ | place);
@@ -515,6 +532,11 @@ class Tensor {
   // Add new location for current placement.
   void AddNewPlace(Placement place) {
     current_placement_ = static_cast<Placement>(current_placement_ | place);
+  }
+
+  // Add new location for referenced data.
+  void AddRefPlace(Placement place) {
+    ref_placement_ = static_cast<Placement>(ref_placement_ | place);
   }
 
   // Return the task index for consumers of this tensor or -1 if tensor is
@@ -528,7 +550,6 @@ class Tensor {
 
   // Element order.
   Order order() const { return order_; }
-  Order required_order() const { return required_order_; }
 
   // Other tensor that this tensor shares storage with.
   Tensor *shared() const { return shared_; }
@@ -587,10 +608,10 @@ class Tensor {
 
  private:
   // Offset in data instance block.
-  size_t offset_ = -1;
+  size_t offset_ = NOOFFSET;
 
   // Offset in device data instance block.
-  size_t device_offset_ = -1;
+  size_t device_offset_ = NOOFFSET;
 
   // Tensor name.
   string name_;
@@ -626,8 +647,7 @@ class Tensor {
   int byte_alignment_ = 1;
 
   // Element order for data.
-  Order order_ = ROW_MAJOR;
-  Order required_order_ = ANY_ORDER;
+  Order order_ = ANY_ORDER;
 
   // Optional other tensor that this tensor shares storage with.
   Tensor *shared_ = nullptr;
@@ -643,10 +663,10 @@ class Tensor {
   // or learnable tensors that need to be accessed from the device.
   DevicePtr device_data_ = DEVICE_NULL;
 
-  // Constant tensors are global and cannot be modifed.
+  // Constant tensors are global and cannot be modified.
   bool constant_ = false;
 
-  // Initialize tensor with random values from normal distrubution.
+  // Initialize tensor with random values from normal distribution.
   bool random_init_ = false;
 
   // Local tensors are allocated in the instance data block.
@@ -677,6 +697,9 @@ class Tensor {
 
   // Deferred placement for outputs from asynchronous steps.
   Placement deferred_placement_ = NOWHERE;
+
+  // Placement for data referenced by a reference tensor.
+  Placement ref_placement_ = NOWHERE;
 
   friend class Network;
   friend class InstanceAllocator;
@@ -748,6 +771,9 @@ class Step : public Attributes {
   // unless this is a scalar or the step does not have any outputs. In that
   // case, the biggest input is returned.
   Tensor *GetPrototype() const;
+
+  // Get type signature for step.
+  string Signature() const;
 
  private:
   // Step name from flow operation.
@@ -826,10 +852,15 @@ class Channel {
   int size() const { return size_; }
 
   // Return placement of channel.
-  Placement placement() const { return format_->placement(); }
+  Placement placement() const {
+    return format_->ref() ? format_->ref_placement() : format_->placement();
+  }
 
   // Return runtime for channel.
   inline Runtime *runtime() const;
+
+  // Return tensor format for channel elements.
+  const Tensor *format() const { return format_; }
 
   // Return contents of channel as string.
   string ToString() const;

@@ -15,12 +15,35 @@
 
 """Myelin function builder and expression evaluator."""
 
+import flow
 from flow import Variable
 from flow import Function
 from flow import Flow
 
-DT_INT = "int32"
-DT_FLOAT = "float32"
+DT_FLOAT32 = "float32"
+DT_FLOAT64 = "float64"
+
+DT_INT8 = "int8"
+DT_INT16 = "int16"
+DT_INT32 = "int32"
+DT_INT64 = "int64"
+DT_BOOL = "bool"
+
+DT_INT = DT_INT32
+DT_FLOAT = DT_FLOAT32
+DT_DOUBLE = DT_FLOAT64
+
+typemap = {
+  "f": DT_FLOAT32,
+  "d": DT_FLOAT64,
+  "i": DT_INT32,
+  "l": DT_INT32,
+  "B": DT_INT8,
+  "h": DT_INT16,
+  "b": DT_INT8,
+  "q": DT_INT64,
+  "?": DT_BOOL,
+}
 
 class Builder:
   def __init__(self, flow, func):
@@ -74,19 +97,26 @@ class Builder:
   def const(self, value, dtype=None, shape=None):
     # Convert scalars.
     if type(value) is float:
-      dtype = DT_FLOAT
-      shape = []
-      value = value
+      if dtype is None: dtype = DT_FLOAT
+      if shape is None: shape = []
     elif type(value) is int:
-      dtype = DT_INT
-      shape = []
-      value = value
+      if dtype is None: dtype = DT_INT
+      if shape is None: shape = []
 
     # Get type and shape if missing.
     if dtype is None: dtype = str(value.dtype)
     if shape is None: shape = list(value.shape)
 
     var = self.flow.var(self.varname("const"), dtype, shape)
+    var.data = value
+    return var
+
+  def array(self, name, value):
+    # Make constant from object with buffer support.
+    view = memoryview(value)
+    dtype = typemap[view.format]
+    shape = list(view.shape)
+    var = self.flow.var(self.func.name + "/" + name, dtype, shape)
     var.data = value
     return var
 
@@ -110,7 +140,6 @@ class Builder:
 
   def concat(self, args, name=None):
     op = self.rawop("ConcatV2", name)
-    op.dtype = args[0].type
     shape = [args[0].shape[0], 0]
     for arg in args:
       op.add_input(arg)
@@ -118,10 +147,24 @@ class Builder:
     op.add_attr("N", len(args))
     axis = self.const(1, DT_INT)
     op.add_input(axis)
-    result = self.var(op.name + ":0", shape=shape)
+    result = self.var(op.name + ":0", args[0].type, shape)
     op.add_output(result)
 
     return op.outputs[0]
+
+  def split(self, x, splits, axis=0, name=None):
+    op = self.rawop("Split", name)
+    op.add_input(x)
+    op.add_input(self.const(splits, DT_INT))
+    op.add_input(self.const(axis, DT_INT))
+    shape = x.shape[:]
+    shape[axis] = x.shape[axis] / splits
+    results = []
+    for n in xrange(splits):
+      o = self.var(op.name + ":" + str(n), x.type, shape)
+      op.add_output(o)
+      results.append(o)
+    return tuple(results)
 
   def add(self, x, y, name=None):
     return self.op("Add", [x, y], name)
@@ -141,11 +184,17 @@ class Builder:
   def maximum(self, x, y, name=None):
     return self.op("Maximum", [x, y], name)
 
+  def argmax(self, x, name=None):
+    result = self.op("ArgMax", [x], name)
+    result.shape = []
+    result.type = DT_INT
+    return result
+
   def gather(self, embedding, indices, oov=None, name=None):
     inputs = [embedding, indices]
     if oov is not None:
       inputs.append(oov)
-    result = self.op('Gather', inputs, name)
+    result = self.op("Gather", inputs, name)
     result.type = embedding.type
     if len(embedding.shape) == 2 and len(indices.shape) == 2:
       result.shape = [indices.shape[1], embedding.shape[1]]
@@ -153,14 +202,23 @@ class Builder:
       result.shape = [0]
     return result
 
-  def gather_sum(self, embedding, indices, name=None):
-    result = self.op('GatherSum', [embedding, indices], name)
+  def pooling_gather(self, optype, embedding, indices, name=None):
+    result = self.op(optype, [embedding, indices], name)
     result.type = embedding.type
     if len(embedding.shape) == 2:
       result.shape = [1, embedding.shape[1]]
     else:
       result.shape = [0]
     return result
+
+  def gather_sum(self, embedding, indices, name=None):
+    return self.pooling_gather("GatherSum", embedding, indices, name)
+
+  def gather_max(self, embedding, indices, name=None):
+    return self.pooling_gather("GatherMax", embedding, indices, name)
+
+  def gather_avg(self, embedding, indices, name=None):
+    return self.pooling_gather("GatherAvg", embedding, indices, name)
 
   def matmul(self, x, y, name=None):
     result = self.op("MatMul", [x, y], name)
@@ -203,14 +261,14 @@ class Builder:
   def square(self, x, name=None):
     return self.op("Square", [x], name)
 
+  def sqrt(self, x, name=None):
+    return self.op("Sqrt", [x], name)
+
   def neg(self, x, name=None):
     return self.op("Neg", [x], name)
 
   def abs(self, x, name=None):
     return self.op("Abs", [x], name)
-
-  def sign(self, x, name=None):
-    return self.op("Sign", [x], name)
 
   def rcp(self, x, name=None):
     return self.op("Reciprocal", [x], name)
@@ -254,17 +312,31 @@ class Builder:
   def identity(self, x, name=None):
     return self.op("Identity", [x], name)
 
+  def reduce(self, optype, x, name=None):
+    v = self.op(optype, [x], name)
+    v.shape = []
+    return v
+
   def sum(self, x, name=None):
-    return self.op("Sum", [x], name)
+    return self.reduce("Sum", x, name)
 
   def product(self, x, name=None):
-    return self.op("Product", [x], name)
+    return self.reduce("Product", x, name)
 
   def min(self, x, name=None):
-    return self.op("Min", [x], name)
+    return self.reduce("Min", x, name)
 
   def max(self, x, name=None):
-    return self.op("Max", [x], name)
+    return self.reduce("Max", x, name)
+
+  def norm(self, x, name=None):
+    return self.sqrt(self.sum(self.square(x)))
+
+  def normalize(self, x, name=None):
+    return self.mul(x, self.rcp(self.sum(x)), name)
+
+  def softmax(self, x, name=None):
+    return self.normalize(self.exp(self.sub(x, self.max(x))), name)
 
   def ref(self, instance, var, name=None):
     r = self.op("Reference", [instance], name)
@@ -272,4 +344,10 @@ class Builder:
     r.type = var.type
     r.shape = var.shape
     return r
+
+# Set builder factory for flows.
+def builder_factory(flow, name):
+  return Builder(flow, name)
+
+flow.builder_factory = builder_factory
 

@@ -54,7 +54,6 @@ installed.
 
 ```shell
 sudo pip install http://download.pytorch.org/whl/cpu/torch-0.3.1-cp27-cp27mu-linux_x86_64.whl
-sudo pip install psutil
 ```
 
 ## Building
@@ -83,6 +82,7 @@ sudo ln -s $(realpath python) /usr/lib/python2.7/dist-packages/sling
 * We currently do not support OSX, but you can check out
   [issue #189](https://github.com/google/sling/issues/189) for help on building
   on OSX.
-* Similarly, we do not support Windows Subsystem Linux (WSL), but you can check
-  out [issue #291](https://github.com/google/sling/issues/291) for help on
-  building on Windows Subsystem Linux (WSL).
+* Similarly, we do not support Windows, but you can check out
+  [issue #296](https://github.com/google/sling/issues/296) for help on
+  building SLING on Windows Subsystem for Linux (WSL).
+

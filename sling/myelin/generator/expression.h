@@ -494,6 +494,9 @@ class ExpressionGenerator {
   Express instructions_;
 };
 
+// Return reduction operator for reduction instruction.
+Reduction ReduceOp(Express::Op *instr);
+
 // Error handler for unsupported operations.
 void UnsupportedOperation(const char *file, int line);
 

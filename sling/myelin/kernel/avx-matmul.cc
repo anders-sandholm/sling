@@ -89,14 +89,17 @@ class AVXVecMatMulBase : public Kernel {
   Type otype_;   // output type
 };
 
-// Vertical float vector-matrix multiplication for CPUs with AVX.
-class AVXFltVecMatMulVBase : public AVXVecMatMulBase {
+// Float vector-matrix multiplication for CPUs with AVX.
+class AVXFltVecMatMulBase : public AVXVecMatMulBase {
  public:
   // Maximum number of loop unrolls.
   static const int kMaxUnrolls = 8;
 
-  AVXFltVecMatMulVBase(bool bias, bool relu)
-      : AVXVecMatMulBase(bias, relu, ROW_MAJOR, DT_FLOAT, DT_FLOAT) {}
+  // Maximum number of adder registers.
+  static const int kMaxAdders = 4;
+
+  AVXFltVecMatMulBase(bool bias, bool relu)
+      : AVXVecMatMulBase(bias, relu, ANY_ORDER, DT_FLOAT, DT_FLOAT) {}
 
   void Adjust(Step *step) override {
     // Get input and output tensors.
@@ -104,6 +107,19 @@ class AVXFltVecMatMulVBase : public AVXVecMatMulBase {
     Tensor *W = step->input(1);
     Tensor *b = bias_ ? step->input(2) : nullptr;
     Tensor *y = step->output(0);
+
+    // Use vertical summations for small matrices and horizontal summation for
+    // large matrices. Use the on-chip cache size for selection.
+    static const int kCacheHitRatio = 2;
+    int cache_size = CPU::L3CacheSize();
+    if (cache_size == 0) cache_size = 1024 * 1024;
+    int elements = x->elements() + W->elements() + y->elements();
+    int footprint = elements * sizeof(float);
+    if (footprint * kCacheHitRatio > cache_size) {
+      W->RequireOrder(COLUMN_MAJOR_PREFERRED);
+    } else {
+      W->RequireOrder(ROW_MAJOR_PREFERRED);
+    }
 
     // Align to one SIMD register.
     bool avx512 = CPU::Enabled(AVX512F);
@@ -115,10 +131,19 @@ class AVXFltVecMatMulVBase : public AVXVecMatMulBase {
 
     // Rows must be aligned to SIMD boundaries to support aligned loads.
     W->MinAlign({avx512 ? 16 : 8, 1});
-    W->SetRequiredOrder(ROW_MAJOR);
   }
 
   void Generate(Step *step, MacroAssembler *masm) override {
+    Tensor *W = step->input(1);
+    if (W->order() == ROW_MAJOR) {
+      GenerateVertical(step, masm);
+    } else {
+      GenerateHorizontal(step, masm);
+    }
+  }
+
+  // Compute matrix multiplication with vertical summation.
+  void GenerateVertical(Step *step, MacroAssembler *masm) {
     Registers &rr = masm->rr();
     SIMDRegisters &mm = masm->mm();
     Label l1, l2, l3;
@@ -156,6 +181,7 @@ class AVXFltVecMatMulVBase : public AVXVecMatMulBase {
     if (step->variant().empty()) {
       string variant = "U" + std::to_string(unrolls);
       if (remaining_cols > 0) variant += "R" + std::to_string(remaining_cols);
+      variant += "V";
       if (avx512) variant += "Z";
       step->set_variant(variant);
     }
@@ -260,8 +286,13 @@ class AVXFltVecMatMulVBase : public AVXVecMatMulBase {
       for (int i = 0; i < unrolls; ++i) {
         // Add bias last in strict mode.
         if (bias_ && strict) {
-          __ vaddps(sum[i].ymm(), sum[i].ymm(),
-                    Operand(vector, colofs, times_1, i * vecbytes));
+          if (avx512) {
+            __ vaddps(sum[i], sum[i],
+                      Operand(vector, colofs, times_1, i * vecbytes));
+          } else {
+            __ vaddps(sum[i].ymm(), sum[i].ymm(),
+                      Operand(vector, colofs, times_1, i * vecbytes));
+          }
         }
 
         // Compute relu.
@@ -429,80 +460,9 @@ class AVXFltVecMatMulVBase : public AVXVecMatMulBase {
       }
     }
   }
-};
 
-class AVXFltVecMatMulV : public AVXFltVecMatMulVBase {
- public:
-  AVXFltVecMatMulV() : AVXFltVecMatMulVBase(false, false) {}
-
-  string Name() override { return "AVXFltVecMatMulV"; }
-  string Operation() override { return "MatMul"; }
-};
-
-class AVXFltVecMatMulAddV : public AVXFltVecMatMulVBase {
- public:
-  AVXFltVecMatMulAddV() : AVXFltVecMatMulVBase(true, false) {}
-
-  string Name() override { return "AVXFltVecMatMulAddV"; }
-  string Operation() override { return "MatMulAdd"; }
-};
-
-class AVXFltVecMatMulReluV : public AVXFltVecMatMulVBase {
- public:
-  AVXFltVecMatMulReluV() : AVXFltVecMatMulVBase(false, true) {}
-
-  string Name() override { return "AVXFltVecMatMulReluV"; }
-  string Operation() override { return "MatMulRelu"; }
-};
-
-class AVXFltVecMatMulAddReluV : public AVXFltVecMatMulVBase {
- public:
-  AVXFltVecMatMulAddReluV() : AVXFltVecMatMulVBase(true, true) {}
-
-  string Name() override { return "AVXFltVecMatMulAddReluV"; }
-  string Operation() override { return "MatMulAddRelu"; }
-};
-
-// Horizontal float vector-matrix multiplication for CPUs with AVX.
-class AVXFltVecMatMulHBase : public AVXVecMatMulBase {
- public:
-  // Maximum number of loop unrolls.
-  static const int kMaxUnrolls = 4;
-
-  // Maximum number of adder registers.
-  static const int kMaxAdders = 4;
-
-  AVXFltVecMatMulHBase(bool bias, bool relu)
-      : AVXVecMatMulBase(bias, relu, COLUMN_MAJOR, DT_FLOAT, DT_FLOAT) {}
-
-  bool Supports(Step *step) override {
-    if (!AVXVecMatMulBase::Supports(step)) return false;
-
-    // Horizontal summation is not strict math compatible.
-    if (step->GetAttr("strict", false)) return false;
-
-    return true;
-  }
-
-  void Adjust(Step *step) override {
-    // Get input and output tensors.
-    Tensor *x = step->input(0);
-    Tensor *W = step->input(1);
-    Tensor *b = bias_ ? step->input(2) : nullptr;
-    Tensor *y = step->output(0);
-
-    // Align to one SIMD register.
-    bool avx512 = CPU::Enabled(AVX512F);
-    int align = avx512 ? 64 : 32;
-    x->SetMiniumAlignment(align);
-    W->SetMiniumAlignment(align);
-    y->SetMiniumAlignment(align);
-    if (bias_) b->SetMiniumAlignment(align);
-
-    W->SetRequiredOrder(COLUMN_MAJOR);
-  }
-
-  void Generate(Step *step, MacroAssembler *masm) override {
+  // Compute matrix multiplication with horizontal summation.
+  void GenerateHorizontal(Step *step, MacroAssembler *masm) {
     Registers &rr = masm->rr();
     SIMDRegisters &mm = masm->mm();
     Label l1, l2;
@@ -534,6 +494,7 @@ class AVXFltVecMatMulHBase : public AVXVecMatMulBase {
     string variant = "U" + std::to_string(unrolls);
     variant += "A" + std::to_string(adders);
     if (remaining_rows > 0) variant += "R" + std::to_string(remaining_rows);
+    variant += "H";
     if (avx512) variant += "Z";
     step->set_variant(variant);
 
@@ -726,18 +687,19 @@ class AVXFltVecMatMulHBase : public AVXVecMatMulBase {
 
       // Add elements in sum[0] horizontally.
       if (avx512) {
-        __ vshuff32x4(acc, sum[0], sum[0], 0x0E);
-        __ vaddps(sum[0], sum[0], acc);
+        __ Reduce(REDUCE_ADD, DT_FLOAT, sum[0], acc);
+      } else {
+        __ Reduce(REDUCE_ADD, DT_FLOAT, sum[0].ymm(), acc.ymm());
       }
-      __ vperm2f128(acc.ymm(), sum[0].ymm(), sum[0].ymm(), 1);
-      __ vhaddps(sum[0].ymm(), sum[0].ymm(), acc.ymm());
-      __ vhaddps(sum[0].ymm(), sum[0].ymm(), sum[0].ymm());
-      __ vhaddps(sum[0].ymm(), sum[0].ymm(), sum[0].ymm());
     }
 
     // Compute relu.
     if (relu_) {
-      __ vmaxss(sum[0].ymm(), sum[0].ymm(), zero.ymm());
+      if (avx512) {
+        __ vmaxss(sum[0], sum[0], zero);
+      } else {
+        __ vmaxss(sum[0].ymm(), sum[0].ymm(), zero.ymm());
+      }
     }
 
     // Save to y[col].
@@ -753,35 +715,35 @@ class AVXFltVecMatMulHBase : public AVXVecMatMulBase {
   }
 };
 
-class AVXFltVecMatMulH : public AVXFltVecMatMulHBase {
+class AVXFltVecMatMul : public AVXFltVecMatMulBase {
  public:
-  AVXFltVecMatMulH() : AVXFltVecMatMulHBase(false, false) {}
+  AVXFltVecMatMul() : AVXFltVecMatMulBase(false, false) {}
 
-  string Name() override { return "AVXFltVecMatMulH"; }
+  string Name() override { return "AVXFltVecMatMul"; }
   string Operation() override { return "MatMul"; }
 };
 
-class AVXFltVecMatMulAddH : public AVXFltVecMatMulHBase {
+class AVXFltVecMatMulAdd : public AVXFltVecMatMulBase {
  public:
-  AVXFltVecMatMulAddH() : AVXFltVecMatMulHBase(true, false) {}
+  AVXFltVecMatMulAdd() : AVXFltVecMatMulBase(true, false) {}
 
-  string Name() override { return "AVXFltVecMatMulAddH"; }
+  string Name() override { return "AVXFltVecMatMulAdd"; }
   string Operation() override { return "MatMulAdd"; }
 };
 
-class AVXFltVecMatMulReluH : public AVXFltVecMatMulHBase {
+class AVXFltVecMatMulRelu : public AVXFltVecMatMulBase {
  public:
-  AVXFltVecMatMulReluH() : AVXFltVecMatMulHBase(false, true) {}
+  AVXFltVecMatMulRelu() : AVXFltVecMatMulBase(false, true) {}
 
-  string Name() override { return "AVXFltVecMatMulReluH"; }
+  string Name() override { return "AVXFltVecMatMulRelu"; }
   string Operation() override { return "MatMulRelu"; }
 };
 
-class AVXFltVecMatMulAddReluH : public AVXFltVecMatMulHBase {
+class AVXFltVecMatMulAddRelu : public AVXFltVecMatMulBase {
  public:
-  AVXFltVecMatMulAddReluH() : AVXFltVecMatMulHBase(true, true) {}
+  AVXFltVecMatMulAddRelu() : AVXFltVecMatMulBase(true, true) {}
 
-  string Name() override { return "AVXFltVecMatMulAddReluH"; }
+  string Name() override { return "AVXFltVecMatMulAddRelu"; }
   string Operation() override { return "MatMulAddRelu"; }
 };
 
@@ -955,17 +917,18 @@ class AVXFltDotProduct : public Kernel {
 
     // Add elements in sum[0] horizontally.
     if (avx512) {
-      __ vshuff32x4(acc, sum[0], sum[0], 0x0E);
-      __ vaddps(sum[0], sum[0], acc);
+      __ Reduce(REDUCE_ADD, DT_FLOAT, sum[0], acc);
+    } else {
+      __ Reduce(REDUCE_ADD, DT_FLOAT, sum[0].ymm(), acc.ymm());
     }
-    __ vperm2f128(acc.ymm(), sum[0].ymm(), sum[0].ymm(), 1);
-    __ vhaddps(sum[0].ymm(), sum[0].ymm(), acc.ymm());
-    __ vhaddps(sum[0].ymm(), sum[0].ymm(), sum[0].ymm());
-    __ vhaddps(sum[0].ymm(), sum[0].ymm(), sum[0].ymm());
 
     // Save result to c.
     __ LoadTensorAddress(cptr, c);
-    __ vmovss(Operand(cptr), sum[0].ymm());
+    if (avx512) {
+      __ vmovss(Operand(cptr), sum[0]);
+    } else {
+      __ vmovss(Operand(cptr), sum[0].ymm());
+    }
   }
 };
 
@@ -1014,7 +977,7 @@ class AVXFltAssignAddOuter : public Kernel {
     c->SetMiniumAlignment(byte_alignment);
 
     // Output must be row-major.
-    c->SetRequiredOrder(ROW_MAJOR);
+    c->RequireOrder(ROW_MAJOR);
   }
 
   void Generate(Step *step, MacroAssembler *masm) override {
@@ -1288,7 +1251,7 @@ class AVXIntVecMatMulHBase : public AVXVecMatMulBase {
     y->SetMiniumAlignment(byte_alignment);
     if (bias_) b->SetMiniumAlignment(byte_alignment);
 
-    W->SetRequiredOrder(COLUMN_MAJOR);
+    W->RequireOrder(COLUMN_MAJOR);
     x->MinAlign({1, 32});
     W->MinAlign({32, 1});
   }
@@ -1469,71 +1432,37 @@ class AVXIntVecMatMulAddReluH : public AVXIntVecMatMulHBase {
 void RegisterAVXMatMul(Library *library) {
   // Computes  : y = x * W
   // Input     : x: float32[1,n]
-  //             W: float32[n,m] column-major
+  //             W: float32[n,m]
   // Output    : y: float32[1,m]
-  // Requires  : AVX
   // Supports  : FMA3, AVX512
-  library->Register(new AVXFltVecMatMulH());
+  // Requires  : AVX
+  library->Register(new AVXFltVecMatMul());
 
   // Computes  : y = x * W + b
   // Input     : x: float32[1,n]
-  //             W: float32[n,m] column-major
+  //             W: float32[n,m]
   //             b: float32[1,n]
   // Output    : y: float32[1,m]
-  // Requires  : AVX
   // Supports  : FMA3, AVX512
-  library->Register(new AVXFltVecMatMulAddH());
+  // Requires  : AVX
+  library->Register(new AVXFltVecMatMulAdd());
 
   // Computes  : y = max(0, x * W)
   // Input     : x: float32[1,n]
-  //             W: float32[n,m] column-major
+  //             W: float32[n,m]
   // Output    : y: float32[1,m]
   // Requires  : AVX
   // Supports  : FMA3, AVX512
-  library->Register(new AVXFltVecMatMulReluH());
+  library->Register(new AVXFltVecMatMulRelu());
 
   // Computes  : y = max(0, x * W + b)
   // Input     : x: float32[1,n]
-  //             W: float32[n,m] column-major
+  //             W: float32[n,m]
   //             b: float32[1,n]
   // Output    : y: float32[1,m]
   // Requires  : AVX
   // Supports  : FMA3, AVX512
-  library->Register(new AVXFltVecMatMulAddReluH());
-
-  // Computes  : y = x * W
-  // Input     : x: float32[1,n]
-  //             W: float32[n,m] row-major
-  // Output    : y: float32[1,m]
-  // Supports  : FMA3, AVX512
-  // Requires  : AVX
-  library->Register(new AVXFltVecMatMulV());
-
-  // Computes  : y = x * W + b
-  // Input     : x: float32[1,n]
-  //             W: float32[n,m] row-major
-  //             b: float32[1,n]
-  // Output    : y: float32[1,m]
-  // Supports  : FMA3, AVX512
-  // Requires  : AVX
-  library->Register(new AVXFltVecMatMulAddV());
-
-  // Computes  : y = max(0, x * W)
-  // Input     : x: float32[1,n]
-  //             W: float32[n,m] row-major
-  // Output    : y: float32[1,m]
-  // Requires  : AVX
-  // Supports  : FMA3, AVX512
-  library->Register(new AVXFltVecMatMulReluV());
-
-  // Computes  : y = max(0, x * W + b)
-  // Input     : x: float32[1,n]
-  //             W: float32[n,m] row-major
-  //             b: float32[1,n]
-  // Output    : y: float32[1,m]
-  // Requires  : AVX
-  // Supports  : FMA3, AVX512
-  library->Register(new AVXFltVecMatMulAddReluV());
+  library->Register(new AVXFltVecMatMulAddRelu());
 
   // Computes  : y = x * W
   // Input     : x: int8[1,n]

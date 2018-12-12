@@ -75,11 +75,18 @@ struct PyRecordDatabase : public PyBase {
   // Close record database.
   PyObject *Close();
 
+  // Return next record as 2-tuple with key and value.
+  PyObject *Next();
+
+  // Return self as iterator.
+  PyObject *Self();
+
   // Record reader.
   RecordDatabase *db;
 
   // Registration.
   static PyTypeObject type;
+  static PyMappingMethods mapping;
   static PyMethodTable methods;
   static void Define(PyObject *module);
 };

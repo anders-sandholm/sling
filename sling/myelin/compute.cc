@@ -36,23 +36,64 @@ namespace myelin {
 
 #define __ masm->
 
-// Combined tensor order.
-static const Order combined_order[4][4] = {
-  {ANY_ORDER,         ROW_MAJOR,         COLUMN_MAJOR,      CONFLICTING_ORDER},
-  {ROW_MAJOR,         ROW_MAJOR,         CONFLICTING_ORDER, CONFLICTING_ORDER},
-  {COLUMN_MAJOR,      CONFLICTING_ORDER, COLUMN_MAJOR,      CONFLICTING_ORDER},
-  {CONFLICTING_ORDER, CONFLICTING_ORDER, CONFLICTING_ORDER, CONFLICTING_ORDER},
-};
-
 // Element order names.
 const char *ordername[] = {
-  "unspecified", "row-major", "column-major", "conflicting"
+  "unspecified",
+  "row-major",
+  "column-major",
+  "row-major preferred",
+  "column-major preferred",
+  "conflicting"
 };
 
 // Placement names.
 const char *placename[] = {
   "nowhere", "host", "device", "host and device"
 };
+
+static Order CombinedOrder(Order a, Order b) {
+  if (a == ANY_ORDER) return b;
+  if (b == ANY_ORDER) return a;
+
+  if (a == CONFLICTING_ORDER) return CONFLICTING_ORDER;
+  if (b == CONFLICTING_ORDER) return CONFLICTING_ORDER;
+
+  if (a == ROW_MAJOR) {
+    if (b == COLUMN_MAJOR) return CONFLICTING_ORDER;
+    return ROW_MAJOR;
+  }
+  if (b == ROW_MAJOR) {
+    if (b == COLUMN_MAJOR) return CONFLICTING_ORDER;
+    return ROW_MAJOR;
+  }
+
+  if (a == COLUMN_MAJOR) {
+    if (b == ROW_MAJOR) return CONFLICTING_ORDER;
+    return COLUMN_MAJOR;
+  }
+  if (b == COLUMN_MAJOR) {
+    if (a == ROW_MAJOR) return CONFLICTING_ORDER;
+    return COLUMN_MAJOR;
+  }
+
+  if (a == COLUMN_MAJOR_PREFERRED && b == COLUMN_MAJOR_PREFERRED) {
+    return COLUMN_MAJOR_PREFERRED;
+  } else {
+    return ROW_MAJOR_PREFERRED;
+  }
+}
+
+static Order FinalOrder(Order order, Order preferred) {
+  switch (order) {
+    case ANY_ORDER: return preferred;
+    case ROW_MAJOR: return ROW_MAJOR;
+    case COLUMN_MAJOR: return COLUMN_MAJOR;
+    case ROW_MAJOR_PREFERRED:  return ROW_MAJOR;
+    case COLUMN_MAJOR_PREFERRED: return COLUMN_MAJOR;
+    case CONFLICTING_ORDER: return CONFLICTING_ORDER;
+  }
+  return CONFLICTING_ORDER;
+}
 
 static int LeastCommonMultiple(int n, int m) {
   int a = n;
@@ -113,6 +154,7 @@ class BasicRuntime : public Runtime {
 
   char *AllocateChannel(char *data, size_t old_size, size_t new_size,
                         size_t alignment, Placement placement) override {
+    DCHECK_EQ(placement, HOST);
     char *buffer = MemAlloc(new_size, alignment);
     if (data != nullptr) {
       memcpy(buffer, data, old_size);
@@ -123,10 +165,12 @@ class BasicRuntime : public Runtime {
 
   void ClearChannel(char *data, size_t pos, size_t size,
                     Placement placement) override {
+    DCHECK_EQ(placement, HOST);
     memset(data + pos, 0, size);
   }
 
   void FreeChannel(char *data, Placement placement) override {
+    DCHECK_EQ(placement, HOST);
     MemFree(data);
   }
 
@@ -189,11 +233,11 @@ class InstanceAllocator {
     // Shared variables share offset.
     if (var->shared_ != nullptr) {
       if (placement_ == HOST) {
-        CHECK(var->shared_->offset_ != -1)
+        CHECK(var->shared_->offset_ != NOOFFSET)
             << var->name() << " " << var->shared_->name();
         var->offset_ = var->shared_->offset_;
       } else {
-        CHECK(var->shared_->device_offset_ != -1)
+        CHECK(var->shared_->device_offset_ != NOOFFSET)
             << var->name() << " " << var->shared_->name();
         var->device_offset_ = var->shared_->device_offset_;
       }
@@ -205,7 +249,7 @@ class InstanceAllocator {
     int align = var->ref_ ? kMinDataAlignment : var->byte_alignment_;
 
     // Try to find free space in the instance block.
-    size_t offset = -1;
+    size_t offset = NOOFFSET;
     for (auto it = freelist_.begin(); it != freelist_.end(); ++it) {
       if (it->first + size > it->second) continue;
       int aligned = Align(it->first, align);
@@ -233,7 +277,7 @@ class InstanceAllocator {
       break;
     }
 
-    if (offset == -1) {
+    if (offset == NOOFFSET) {
       // No free space in instance block. Extend the instance block and add new
       // variable at the end.
       size_t end = current_instance_size_;
@@ -531,11 +575,11 @@ int Tensor::ChannelElementSize() const {
 }
 
 bool Tensor::SupportsOrder(Order order) {
-  return combined_order[required_order_][order] != CONFLICTING_ORDER;
+  return CombinedOrder(order_, order) != CONFLICTING_ORDER;
 }
 
-void Tensor::SetRequiredOrder(Order order) {
-  required_order_ = combined_order[required_order_][order];
+void Tensor::RequireOrder(Order order) {
+  order_ = CombinedOrder(order_, order);
 }
 
 void Tensor::SetMiniumAlignment(int alignment) {
@@ -706,8 +750,15 @@ string Channel::ToString() const {
   for (int i = 0; i < size_; ++i) {
     str.append(std::to_string(i));
     str.append(": ");
-    str.append(format_->ToString(at(i), false));
+    char *p = at(i);
+    char *buffer = nullptr;
+    if (placement() & DEVICE) {
+      p = buffer = runtime()->FetchDataFromDevice(
+        reinterpret_cast<DevicePtr>(p), element_size_);
+    }
+    str.append(format_->ToString(p, false));
     str.append("\n");
+    free(buffer);
   }
   return str;
 }
@@ -741,16 +792,28 @@ string Instance::ToString(const Tensor *param) const {
   char *p;
   char *buffer = nullptr;
   if (param->placement() == DEVICE) {
-    if (param->ref()) return "<<device ptr>>";
     p = buffer = runtime()->FetchTensorFromDevice(this, param);
   } else {
-    p  = data_ + param->offset();
-    if (param->ref() && (param->placement() & DEVICE)) return "<<device ref>>";
+    p = data_ + param->offset();
+  }
+
+  // Dereference reference tensors.
+  if (param->ref() && p != nullptr) {
+    p = *reinterpret_cast<char **>(p);
+    if (buffer) {
+      free(buffer);
+      buffer = nullptr;
+    }
+    if (param->ref_placement() == DEVICE && p != nullptr) {
+      // Fetch referenced data from device.
+      DevicePtr devptr = reinterpret_cast<DevicePtr>(p);
+      p = buffer = runtime()->FetchDataFromDevice(devptr, param->size());
+    }
   }
 
   // Convert tensor to string.
-  string str = param->ToString(p);
-  free(buffer);
+  string str = param->ToString(p, false);
+  if (buffer) free(buffer);
   return str;
 }
 
@@ -852,6 +915,29 @@ Tensor *Step::GetPrototype() const {
   return prototype;
 }
 
+string Step::Signature() const {
+  string str;
+  if (!outputs_.empty()) {
+    bool first = true;
+    for (Tensor *output : outputs_) {
+      if (!first) str.append(",");
+      str.append(output->TypeString());
+      first = false;
+    }
+    str.append("=");
+  }
+  str.append(type_);
+  str.append("(");
+  bool first = true;
+  for (Tensor *input : inputs_) {
+    if (!first) str.append(",");
+    str.append(input->TypeString());
+    first = false;
+  }
+  str.append(")");
+  return str;
+}
+
 Network::Network() {
   runtime_ = &default_runtime;
   linker_ = &jit_linker;
@@ -873,7 +959,7 @@ Network::~Network() {
 }
 
 void Network::InitLearnableWeights(int64 seed, float mean, float stddev) {
-  // Intialize random generator.
+  // Initialize random generator.
   std::mt19937_64 prng;
   prng.seed(seed);
   std::uniform_real_distribution<float> dist(mean, stddev);
@@ -972,7 +1058,6 @@ bool Network::Compile(const Flow &flow, const Library &library) {
     tensor->local_ = !var->global();
     if (tensor->local_) {
       parameters_.push_back(tensor);
-      tensor->required_order_ = options_.parameter_element_order;
     } else {
       globals_.push_back(tensor);
       tensor->random_init_ = var->random() && var->learnable();
@@ -995,22 +1080,42 @@ bool Network::Compile(const Flow &flow, const Library &library) {
     if (var->in()) {
       tensor->current_placement_ = HOST;
       tensor->placement_ = HOST;
+      if (tensor->local_) {
+        tensor->order_ = options_.parameter_element_order;
+      }
     }
 
     // Output variables must be available on the host after the computation.
     tensor->out_ = var->out();
-    if (var->out()) tensor->placement_ = HOST;
+    if (var->out()) {
+      tensor->placement_ = HOST;
+      if (tensor->local_) {
+        tensor->order_ = options_.parameter_element_order;
+      }
+    }
 
     // Initialize constant tensors with data from the flow variable so they can
     // be used before tensor data allocation.
     if (tensor->constant()) {
-      tensor->data_ = var->data;
-      tensor->size_ = var->size;
       size_t stride = TypeTraits::of(tensor->type()).size();
       for (int d = tensor->rank() - 1; d >= 0; --d) {
         tensor->stride_.set(d, stride);
         stride *= tensor->shape_.dim(d);
       }
+
+      if (var->size < stride) {
+        LOG(ERROR) << "Invalid data size for variable " << var->name << " "
+                   << var->TypeString() << ", "
+                   << var->size << " bytes, " << stride << " expected";
+        return false;
+      } else if (var->size > stride) {
+        LOG(WARNING) << "Excess data for variable " << var->name << " "
+                   << var->TypeString() << ", "
+                   << var->size << " bytes, " << stride << " expected";
+      }
+
+      tensor->data_ = var->data;
+      tensor->size_ = stride;
     }
   }
 
@@ -1137,8 +1242,8 @@ bool Network::Compile(const Flow &flow, const Library &library) {
       }
     }
     if (step->kernel_ == nullptr) {
-      LOG(ERROR) << "No kernel supports " << step->name()
-                 << " of type " << step->type();
+      LOG(ERROR) << "No kernel supports step " << step->name() << ": "
+                 << step->Signature();
       return false;
     }
     VLOG(3) << "Step " << step->name() << " implemented by "
@@ -1228,11 +1333,11 @@ bool Network::Compile(const Flow &flow, const Library &library) {
       l->require_dense_ |= t->require_dense_;
 
       // Propagate order constraints.
-      if (t->required_order_ != l->required_order_) {
-        Order c = combined_order[t->required_order_][l->required_order_];
-        if (t->required_order_ != c || l->required_order_ != c) {
-          t->required_order_ = c;
-          l->required_order_ = c;
+      if (t->order_ != l->order_) {
+        Order c = CombinedOrder(t->order_, l->order_);
+        if (t->order_ != c || l->order_ != c) {
+          t->order_ = c;
+          l->order_ = c;
           again = true;
         }
       }
@@ -1247,13 +1352,6 @@ bool Network::Compile(const Flow &flow, const Library &library) {
         l->byte_alignment_ = align;
         again = true;
       }
-
-      // Propagate placement.
-      if (t->placement_ != l->placement_) {
-        t->AddPlace(l->placement_);
-        l->AddPlace(t->placement_);
-        again = true;
-      }
     }
   }
 
@@ -1261,20 +1359,11 @@ bool Network::Compile(const Flow &flow, const Library &library) {
   for (auto it : tensors) {
     Tensor *tensor = it.second;
 
-    // Determine element order.
-    CHECK_EQ(tensor->order(), ROW_MAJOR);
-    switch (tensor->required_order_) {
-      case COLUMN_MAJOR:
-        // Swap element order.
-        tensor->order_ = COLUMN_MAJOR;
-        break;
-      case ANY_ORDER:
-      case ROW_MAJOR:
-        // Already in row-major order.
-        break;
-      case CONFLICTING_ORDER:
-        LOG(ERROR) << "Conflicting order requirements for " << tensor->name();
-        return false;
+    // Determine final element order.
+    tensor->order_ = FinalOrder(tensor->order_, ROW_MAJOR);
+    if (tensor->order_ == CONFLICTING_ORDER) {
+      LOG(ERROR) << "Conflicting order requirements for " << tensor->name();
+      return false;
     }
 
     // Check for dense encoding conflicts.
@@ -1316,10 +1405,12 @@ bool Network::Compile(const Flow &flow, const Library &library) {
     if (tensor->producer_ != nullptr) {
       // Tensor is available in the place it is produced.
       tensor->AddPlace(tensor->producer_->placement());
+      if (tensor->ref()) tensor->AddRefPlace(tensor->producer_->placement());
     }
     for (Step *consumer : tensor->consumers_) {
       // Tensor must be made available in the places it is consumed.
       tensor->AddPlace(consumer->placement());
+      if (tensor->ref()) tensor->AddRefPlace(consumer->placement());
     }
 
     VLOG(5) << "Tensor " << tensor->name_ << ": " << tensor->TypeString()
@@ -1342,6 +1433,10 @@ bool Network::Compile(const Flow &flow, const Library &library) {
       }
       if (next->byte_alignment_ < tensor->byte_alignment_) {
         next->byte_alignment_ = tensor->byte_alignment_;
+      }
+      if (next->placement_ != tensor->placement_) {
+        next->AddPlace(tensor->placement_);
+        tensor->AddPlace(next->placement_);
       }
       next = next->shared_;
     }
@@ -1923,7 +2018,7 @@ string Cell::ToString() const {
   }
   std::sort(fields.begin(), fields.end(), CompareOffset);
 
-  int prev_offset = -1;
+  size_t prev_offset = NOOFFSET;
   bool on_device = false;
   for (Tensor *t : fields) {
     if (t->placement() & HOST) {
@@ -1941,6 +2036,9 @@ string Cell::ToString() const {
                     t->offset(),
                     t->space(), t->byte_alignment());
       StringAppendF(&str, " %s", ordername[t->order()]);
+      if (t->ref_placement() != NOWHERE) {
+        StringAppendF(&str, " %s ref", placename[t->ref_placement()]);
+      }
       if (t->linked()) {
         StringAppendF(&str, " linked to %s", t->next_link()->name().c_str());
       }
@@ -1952,7 +2050,7 @@ string Cell::ToString() const {
 
   if (on_device) {
     str.append("\n");
-    prev_offset = -1;
+    prev_offset = NOOFFSET;
     for (Tensor *t : fields) {
       if (t->placement() & DEVICE) {
         str.append("  ");
@@ -1969,6 +2067,9 @@ string Cell::ToString() const {
                       t->device_offset(),
                       t->space(), t->byte_alignment());
         StringAppendF(&str, " %s", ordername[t->order()]);
+        if (t->ref_placement() != NOWHERE) {
+          StringAppendF(&str, " %s ref", placename[t->ref_placement()]);
+        }
         if (t->linked()) {
           StringAppendF(&str, " linked to %s", t->next_link()->name().c_str());
         }

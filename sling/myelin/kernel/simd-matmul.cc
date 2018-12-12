@@ -27,9 +27,6 @@ namespace myelin {
 
 using namespace jit;
 
-// Maximum number of loop unrolls.
-static const int kMaxUnrolls = 4;
-
 // Arguments for matmul op. This takes transposition and element order of the
 // arguments into account.
 class MatMulArgs {
@@ -73,6 +70,9 @@ class MatMulArgs {
 
     // Width (inner dimension) of tensor array.
     int width() const { return tensor->dim(inner()); }
+
+    // Number of elements in tensor array.
+    int elements() const { return tensor->elements(); }
 
     // Size of tensor in bytes.
     int size() const { return tensor->size(); }
@@ -143,7 +143,7 @@ class MatMulArgs {
   }
 
   // Set the required order for output.
-  void SetRequiredOrder(Order order) {
+  void RequireOrder(Order order) {
     EnsureOutputOrder(order);
     Order required;
     switch (order) {
@@ -156,7 +156,7 @@ class MatMulArgs {
       default:
         required = ANY_ORDER;
     }
-    c_.tensor->SetRequiredOrder(required);
+    c_.tensor->RequireOrder(required);
   }
 
   // Check that argument shapes match a matrix multiplication.
@@ -233,13 +233,17 @@ class SIMDMatMul : public Kernel {
   void Adjust(Step *step) override {
     // Set required order for output.
     MatMulArgs args(step);
-    args.SetRequiredOrder(ROW_MAJOR);
+    args.RequireOrder(ROW_MAJOR);
 
     // Set alignment.
-    int vecbytes = SIMDAssembler::VectorBytes(args.c().type());
+    Type type = args.c().type();
+    int vecbytes = SIMDAssembler::VectorBytes(type);
     args.a().tensor->SetMiniumAlignment(vecbytes);
     args.b().tensor->SetMiniumAlignment(vecbytes);
     args.c().tensor->SetMiniumAlignment(vecbytes);
+
+    // Reserve registers.
+    step->SetRegisterUsage(SIMDAssembler::RegisterUsage(type) + 8);
   }
 
   void Generate(Step *step, MacroAssembler *masm) override {
@@ -280,7 +284,7 @@ class SIMDMatMul : public Kernel {
     }
 
     // Compute vector processing strategy.
-    SIMDStrategy strategy(&sasm, args.b().width(), kMaxUnrolls);
+    SIMDStrategy strategy(&sasm, args.b().width());
     strategy.PreloadMasks();
 
     // Allocate registers.
@@ -496,7 +500,7 @@ class SIMDMatMul : public Kernel {
     CHECK_EQ(args.a().width(), args.b().width());
 
     // Compute vector processing strategy.
-    SIMDStrategy strategy(&sasm, args.b().width(), kMaxUnrolls);
+    SIMDStrategy strategy(&sasm, args.b().width());
     strategy.PreloadMasks();
 
     // Allocate registers.
@@ -540,11 +544,13 @@ class SIMDMatMul : public Kernel {
     for (auto r : sum) sasm.main()->Zero(r);
 
     // Compute dot product between row in A and row in B.
+    bool scalar = true;
     for (auto &phase : strategy.phases()) {
       auto *gen = phase.generator;
       int vecsize = gen->VectorSize();
       int blkstart = phase.offset * dsize;
       int blksize = phase.unrolls * vecsize * dsize;
+      if (vecsize > 1) scalar = false;
 
       if (phase.repeat > 1) {
         // Repeated phase.
@@ -599,14 +605,16 @@ class SIMDMatMul : public Kernel {
 
     // Horizontal sum of results.
     sasm.Sum(sum);
-    sasm.main()->Sum(sum[0]);
+    if (!scalar) sasm.main()->Sum(sum[0]);
 
     // Save result in C.
     if (accumulate_) {
       sasm.scalar()->Add(sum[0], sum[0], Operand(c));
     }
     sasm.scalar()->Store(Operand(c), sum[0]);
-    __ addq(c, Immediate(dsize));
+    if (args.c().elements() > 1) {
+      __ addq(c, Immediate(dsize));
+    }
 
     // Next row in B.
     if (args.b().height() > 1) {
@@ -712,7 +720,10 @@ class SIMDMatMul : public Kernel {
 
   int64 Complexity(const Step *step) override {
     MatMulArgs args(step);
-    return args.c().tensor->elements() * args.a().shape.dim(1) * 2;
+    int64 ops = args.c().tensor->elements();
+    ops *= args.a().shape.dim(1);
+    ops *= 2;
+    return  ops;
   }
 
  private:

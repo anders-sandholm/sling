@@ -19,6 +19,7 @@
 #include "sling/nlp/parser/parser.h"
 
 #include "sling/frame/serialization.h"
+#include "sling/myelin/kernel/dragnn.h"
 #include "sling/nlp/document/document.h"
 #include "sling/nlp/document/features.h"
 #include "sling/nlp/document/lexicon.h"
@@ -33,6 +34,12 @@ void Parser::Load(Store *store, const string &model) {
   // Load and analyze parser flow file.
   myelin::Flow flow;
   CHECK(flow.Load(model));
+
+  // FIXME(ringgaard): Patch feature cell output.
+  flow.Var("features/feature_vector")->set_in();
+
+  // Register DRAGNN kernel to support legacy parser models.
+  RegisterDragnnLibrary(compiler_.library());
 
   // Compile parser flow.
   compiler_.Compile(&flow, &network_);
@@ -152,7 +159,7 @@ void Parser::InitFF(const string &name, myelin::Flow::Blob *spec, FF *ff) {
     }
     ff->mark_distance_bins.push_back(bins.size());
   }
-  
+
   // Get links.
   ff->lr_lstm = GetParam(name + "/link/lr_lstm");
   ff->rl_lstm = GetParam(name + "/link/rl_lstm");
@@ -192,8 +199,7 @@ void Parser::Parse(Document *document) const {
 
       // Apply the cascade.
       ParserAction action;
-      data.cascade_.Compute(
-        &data.ff_step_, step, &state, &action, data.trace_);
+      data.cascade_.Compute(&data.ff_step_, step, &state, &action, data.trace_);
       state.Apply(action);
 
       // Update state.
@@ -216,6 +222,8 @@ void Parser::Parse(Document *document) const {
 
         case ParserAction::EVOKE:
           if (action.length == 0) data.marks_.pop_back();
+          FALLTHROUGH_INTENDED;
+
         case ParserAction::REFER:
         case ParserAction::CONNECT:
         case ParserAction::ASSIGN:
