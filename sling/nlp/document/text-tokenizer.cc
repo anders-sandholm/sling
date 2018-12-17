@@ -538,8 +538,8 @@ static const char *kAbbreviations[] = {
   "a.", "abb.", "abg.", "abs.", "abt.", "ac.", "acad.", "acc.", "adm.",
   "admin.", "adopt.", "adr.", "ads.", "adv.", "af.", "ag.", "ala.", "alm.",
   "alt.", "amer.", "amex.", "ann.", "ans.", "ap.", "app.", "appl.", "approx.",
-  "apr.", "apt.", "arch.", "ark.", "ariz.", "art.", "assoc.", "asst.", "aufl.",
-  "aug.", "auto.", "av.", "ave.", "avg.",
+  "apr.", "apt.", "arch.", "ark.", "ariz.", "art.", "assoc.", "asst.", "atty.",
+  "aufl.", "aug.", "auto.", "av.", "ave.", "avg.",
 
   "b.", "bc.", "bd.", "biochem.", "biol.", "bl.", "bldg.", "blvd.", "br.",
   "bros.", "bzw.",
@@ -592,14 +592,14 @@ static const char *kAbbreviations[] = {
   "pgs.", "ph.", "phil.", "php.", "phys.", "pic.", "plc.", "pol.", "pop.",
   "pos.", "pot.", "pp.", "pr.", "preg.", "pres.", "prev.", "priv.", "pro.",
   "proc.", "prof.", "prog.", "prov.", "ps.", "psa.", "pt.", "pub.", "publ.",
-  "pvt.", "ph.d.",
+  "pvt.",
 
   "q.",
 
   "r.", "rd.", "re.", "rec.", "ref.", "reg.", "rel.", "rep.", "res.", "resp.",
   "rev.", "rm.", "rom.", "rs.", "rt.", "ru.", "rul.",
 
-  "s.", "sa.",  "sat.", "sci.", "sec.", "sen.", "sens.", "sep.", "sept.",
+  "s.", "sa.",  "sat.", "sc.", "sci.", "sec.", "sen.", "sens.", "sep.", "sept.",
   "ser.", "serv.", "sgt.", "sie.", "sig.", "sm.", "soc.", "sol.", "sp.", "spc.",
   "spec.", "sq.", "sr.", "ss.", "st.", "stat.", "std.", "ste.", "stk.", "str.",
   "sup.", "supp.",
@@ -626,7 +626,7 @@ static const char *kAbbreviations[] = {
   // Compound abbreviations.
   "a.c.", "a.d.", "a.k.a.", "a.m.", "c.e.", "cont'd.", "d.c.", "e.g.", "f.a.o.",
   "g.m.b.h.", "i.b.m.", "i.e.", "l.a.", "m.a.", "m.b.a.", "m.d.", "n.y.",
-  "p.m.", "p.r.", "u.k.", "u.n.", "u.s.a.", "u.s.s.r.", "u.s.",
+  "ph.d.", "p.m.", "p.r.", "u.k.", "u.n.", "u.s.a.", "u.s.s.r.", "u.s.",
 
   // Special words.
   "c++", "yahoo!", ".net", "google+",
@@ -749,8 +749,10 @@ void StandardTokenization::Init(CharacterFlags *char_flags) {
   AddTokenType(". . .", TOKEN_CONDEOS, "...");
   AddTokenType("--", TOKEN_CONDEOS);
   AddTokenType("---", TOKEN_CONDEOS, "--");
-  AddTokenType("—", TOKEN_CONDEOS, "--");  // em dash
-  AddTokenType("–", TOKEN_CONDEOS, "--");  // en dash
+  AddTokenType("‒", TOKEN_CONDEOS, "--");  // U+2012 figure dash
+  AddTokenType("–", TOKEN_CONDEOS, "--");  // U+2013 en dash
+  AddTokenType("—", TOKEN_CONDEOS, "--");  // U+2014 em dash
+  AddTokenType("−", TOKEN_CONDEOS, "--");  // U+2212 minus sign
   AddTokenType("\"", TOKEN_QUOTE);
   AddTokenType("＂", TOKEN_QUOTE);
   AddTokenType("，", 0, ",");
