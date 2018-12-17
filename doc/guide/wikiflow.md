@@ -50,7 +50,6 @@ the download with the following flags:
   * `--wikidata YYYYMMDD`
     Specifies the version of the [Wikidata dump](https://dumps.wikimedia.org/wikidatawiki/entities/).
     If this is not specified, the latest version available is used.
-    This is usually updated once a quarter.
   * `--overwrite`
     Allows existing local files to be overwritten when downloading new dump
     files.

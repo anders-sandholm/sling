@@ -16,7 +16,6 @@
 
 import os
 import urllib2
-import random
 import time
 
 from workflow import *
@@ -56,8 +55,8 @@ class UrlDownload:
     # Download from url to file.
     if ratelimit > 0: log.info("Start download of " + url)
     conn = urllib2.urlopen(url)
-    srvLastModified = time.mktime(time.strptime(conn.headers['last-modified'],
-                                                "%a, %d %b %Y %H:%M:%S GMT"))
+    last_modified = time.mktime(time.strptime(conn.headers['last-modified'],
+                                              "%a, %d %b %Y %H:%M:%S GMT"))
     total_bytes = "bytes_downloaded"
     bytes = name + "_bytes_downloaded"
     with open(output.name, 'wb') as f:
@@ -67,7 +66,7 @@ class UrlDownload:
         f.write(chunk)
         task.increment(total_bytes, len(chunk))
         task.increment(bytes, len(chunk))
-    os.utime(output.name, (srvLastModified, srvLastModified))
+    os.utime(output.name, (last_modified, last_modified))
     if ratelimit > 0: download_concurrency -= 1
     log.info(name + " downloaded")
 
