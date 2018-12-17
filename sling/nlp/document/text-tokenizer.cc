@@ -624,9 +624,10 @@ static const char *kAbbreviations[] = {
   "mon.", "tue.", "wed.", "thu.", "fri.", "sat.", "sun.",
 
   // Compound abbreviations.
-  "a.c.", "a.d.", "a.k.a.", "a.m.", "c.e.", "cont'd.", "d.c.", "e.g.", "f.a.o.",
-  "g.m.b.h.", "i.b.m.", "i.e.", "l.a.", "m.a.", "m.b.a.", "m.d.", "n.y.",
-  "ph.d.", "p.m.", "p.r.", "u.k.", "u.n.", "u.s.a.", "u.s.s.r.", "u.s.",
+  "a.c.", "a.d.", "a.k.a.", "a.m.", "b.sc.", "c.e.", "cont'd.", "d.c.", "d.sc.",
+  "dr.sc.", "e.g.", "f.a.o.", "g.m.b.h.", "i.b.m.", "i.e.", "l.a.", "m.a.",
+  "m.b.a.", "m.d.", "m.sc.", "n.y.", "ph.d.", "p.m.", "p.r.", "u.k.", "u.n.",
+  "u.s.a.", "u.s.s.r.", "u.s.",
 
   // Special words.
   "c++", "yahoo!", ".net", "google+",
@@ -745,14 +746,14 @@ void StandardTokenization::Init(CharacterFlags *char_flags) {
   AddTokenType("·", TOKEN_EOS | TOKEN_PARA | TOKEN_DISCARD);  // middle dot
   AddTokenType("...", TOKEN_CONDEOS);
   AddTokenType("…", TOKEN_CONDEOS, "...");
-  AddTokenType("&", TOKEN_CONDEOS, "&");
+  AddTokenType("&", 0, "&");
   AddTokenType(". . .", TOKEN_CONDEOS, "...");
-  AddTokenType("--", TOKEN_CONDEOS);
-  AddTokenType("---", TOKEN_CONDEOS, "--");
-  AddTokenType("‒", TOKEN_CONDEOS, "--");  // U+2012 figure dash
-  AddTokenType("–", TOKEN_CONDEOS, "--");  // U+2013 en dash
-  AddTokenType("—", TOKEN_CONDEOS, "--");  // U+2014 em dash
-  AddTokenType("−", TOKEN_CONDEOS, "--");  // U+2212 minus sign
+  AddTokenType("--", 0);
+  AddTokenType("---", 0, "--");
+  AddTokenType("‒", 0, "--");  // U+2012 figure dash
+  AddTokenType("–", 0, "--");  // U+2013 en dash
+  AddTokenType("—", 0, "--");  // U+2014 em dash
+  AddTokenType("−", 0, "--");  // U+2212 minus sign
   AddTokenType("\"", TOKEN_QUOTE);
   AddTokenType("＂", TOKEN_QUOTE);
   AddTokenType("，", 0, ",");
