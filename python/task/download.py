@@ -42,9 +42,10 @@ class UrlDownload:
     directory = os.path.dirname(output.name)
     if not os.path.exists(directory): os.makedirs(directory)
 
-    # Do not overwrite existing file.
-    if os.path.exists(output.name):
-      raise Exception("file already exists: " + output.name)
+    # Do not overwrite existing file unless flag is set.
+    if not flags.arg.overwrite and os.path.exists(output.name):
+      raise Exception("file already exists: " + output.name + \
+                      " (use --overwrite to overwrite existing files)")
 
     # Wait until we are below the rate limit.
     global download_concurrency
@@ -55,6 +56,8 @@ class UrlDownload:
     # Download from url to file.
     if ratelimit > 0: log.info("Start download of " + url)
     conn = urllib2.urlopen(url)
+    srvLastModified = time.mktime(time.strptime(conn.headers['last-modified'],
+                                                "%a, %d %b %Y %H:%M:%S GMT"))
     total_bytes = "bytes_downloaded"
     bytes = name + "_bytes_downloaded"
     with open(output.name, 'wb') as f:
@@ -64,9 +67,10 @@ class UrlDownload:
         f.write(chunk)
         task.increment(total_bytes, len(chunk))
         task.increment(bytes, len(chunk))
+    os.utime(output.name, (srvLastModified, srvLastModified))
     if ratelimit > 0: download_concurrency -= 1
     log.info(name + " downloaded")
-	
+
 register_task("url-download", UrlDownload)
 
 class DownloadWorkflow:
