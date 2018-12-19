@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Class for extracting birth death date facts from English Wikipedia articles and storing them in a record file"""
+"""Class for extracting birth death dates from English Wikipedia articles"""
 
 import sling
 import sling.flags as flags
@@ -23,7 +23,7 @@ class ExtractWikipediaDates:
     self.kb = sling.Store()
     self.kb.lockgc()
     print "loading kb"
-    self.kb.load("local/data/e/wiki/kb.sling", snapshot=True)
+    self.kb.load("local/data/e/wiki/kb.sling")
     print "kb loaded"
     self.instanceof = self.kb['P31']
     self.date_of_birth = self.kb['P569']
@@ -67,8 +67,7 @@ class ExtractWikipediaDates:
     return date
 
   def run(self):
-    month = "(January|February|March|April|May|June|July|August|September|"
-    month += "October|November|December)"
+    month = "(" + "|".join(months.keys()) + ")"
     day = "(\d{1,2})"
     year = "(\d{4})"
     date = "(?:(?:" + day + " " + month + " " + year + ")|"
