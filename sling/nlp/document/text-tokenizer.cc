@@ -599,7 +599,7 @@ static const char *kAbbreviations[] = {
   "r.", "rd.", "re.", "rec.", "ref.", "reg.", "rel.", "rep.", "res.", "resp.",
   "rev.", "rm.", "rom.", "rs.", "rt.", "ru.", "rul.",
 
-  "s.", "sa.",  "sat.", "sc.", "sci.", "sec.", "sen.", "sens.", "sep.", "sept.",
+  "s.", "sa.",  "sat.", "sci.", "sec.", "sen.", "sens.", "sep.", "sept.",
   "ser.", "serv.", "sgt.", "sie.", "sig.", "sm.", "soc.", "sol.", "sp.", "spc.",
   "spec.", "sq.", "sr.", "ss.", "st.", "stat.", "std.", "ste.", "stk.", "str.",
   "sup.", "supp.",
@@ -739,8 +739,8 @@ void StandardTokenization::Init(CharacterFlags *char_flags) {
   AddTokenType(",", 0);
   AddTokenType("!", TOKEN_CONDEOS);
   AddTokenType("?", TOKEN_CONDEOS);
-  AddTokenType(";", TOKEN_CONDEOS);
-  AddTokenType(":", TOKEN_CONDEOS);
+  AddTokenType(";", 0);
+  AddTokenType(":", 0);
   AddTokenType("|", TOKEN_EOS | TOKEN_DISCARD);
   AddTokenType(" * ", TOKEN_EOS | TOKEN_PARA | TOKEN_DISCARD);  // ASCII bullet
   AddTokenType("·", TOKEN_EOS | TOKEN_PARA | TOKEN_DISCARD);  // middle dot
