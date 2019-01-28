@@ -231,11 +231,11 @@ class StoreFactsBot:
               continue
             else:
               # item already has property with a same year less precise date
-              claim = wd_claims[prop_str][0]
               # check that sources are all WP or empty
-              if not self.all_WP(claim.getSources()):
+              if not self.all_WP(wd_claims[prop_str][0].getSources()):
                 self.log_status_skip(item, fact, "date with non-WP source(s)")
                 continue
+              wd_item.removeClaims(wd_claims[prop_str])
         elif claim.type == 'wikibase-item':
           if prop_str in wd_claims:
             self.log_status_skip(item, fact, "already has property")
@@ -254,15 +254,8 @@ class StoreFactsBot:
         else:
           continue
         summary = provenance[self.n_method] + " " + s
-        if prop_str in wd_claims and claim in wd_claims[prop_str]:
-          claim.changeTarget(target, summary=summary)
-          for source in claim.getSources():
-            if "P143" in source:
-              for claim in source["P143"]:
-                if claim.target_equals(self.en_wp): sources = []
-        else:
-          claim.setTarget(target)
-          wd_item.addClaim(claim, summary=summary)
+        claim.setTarget(target)
+        wd_item.addClaim(claim, summary=summary)
         rev_id = str(wd_item.latest_revision_id)
         if len(sources) > 0: claim.addSources(sources)
         self.log_status_stored(item, fact, rev_id)
