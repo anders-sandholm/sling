@@ -65,10 +65,6 @@ class FactCatalog {
   // Items that stop closure expansion.
   HandleSet base_items_;
 
-  // Date and location valued properties.
-  HandleSet date_properties_;
-  HandleSet location_properties_;
-
   // Symbols.
   Names names_;
   Name p_role_{names_, "role"};
@@ -89,6 +85,7 @@ class FactCatalog {
   Name p_time_period_{names_, "P2348"};
   Name p_start_time_{names_, "P580"};
   Name p_end_time_{names_, "P582"};
+  Name p_described_by_source_{names_, "P1343"};
 
   Name n_time_{names_, "/w/time"};
   Name n_item_{names_, "/w/item"};
@@ -122,6 +119,9 @@ class Facts {
 
   // Extract simple fact with no backoff.
   void ExtractSimple(Handle value);
+
+  // Skip extraction.
+  void ExtractNothing(Handle value);
 
   // Extract simple property from item.
   void ExtractProperty(Handle item, const Name &property);
@@ -168,11 +168,9 @@ class Facts {
   // Add fact based on current path.
   void AddFact(Handle value);
 
-  // Returns true if 'coarse' subsumes 'fine' as a value of 'property'.
-  // E.g. 'US' subsumes 'New York' for place of birth property.
-  // Returns true in the base case where coarse = fine.
-  // Only works for location and date-valued properties.
-  bool Subsumes(Handle property, Handle coarse, Handle fine);
+  // Returns true if 'coarse' is in the closure of 'fine'.
+  // Closure is performed by following 'property' roles.
+  bool ItemInClosure(Handle property, Handle coarse, Handle fine);
 
   // Add value to current fact path.
   void push(Handle value) { path_.push_back(value); }
