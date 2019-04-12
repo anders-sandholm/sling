@@ -43,6 +43,7 @@ cc_library(
     "//sling/myelin:flow",
     "//sling/myelin:compiler",
     "//sling/myelin:compute",
+    "//sling/myelin:gradient",
     "//sling/nlp/document",
     "//sling/nlp/document:document-tokenizer",
     "//sling/nlp/document:lex",
@@ -84,6 +85,7 @@ cc_library(
     "//sling/nlp/embedding:word-embeddings",
 
     "//sling/nlp/ner:idf",
+    "//sling/nlp/ner:labeler",
 
     "//sling/task:frame-store-reader",
     "//sling/task:frame-store-writer",
