@@ -79,6 +79,9 @@ class StoreFactsBot:
     #self.pa_item = self.store["/wp/page/item"]
     self.pa_cat = self.store["/wp/page/category"]
 
+    self.date_of_birth = self.store['P569']
+    self.date_of_death = self.store['P570']
+
     self.n_item = self.store["item"]
     self.n_facts = self.store["facts"]
     self.n_provenance = self.store["provenance"]
@@ -124,7 +127,7 @@ class StoreFactsBot:
                                    day=today.day)
     self.time_claim.setTarget(time_target)
 
-    self.unique_properties = set()
+    self.unique_properties = {self.date_of_birth, self.date_of_death}
     kb = self.store
     # Collect unique-valued properties.
     # They will be used to compute CONFLICT counts.
@@ -142,7 +145,7 @@ class StoreFactsBot:
 
   def is_unique(self, prop):
     if prop not in self.unique_cache:
-      self.unique_cache[prop] = prop in self.unique_properties
+      self.unique_cache[prop] = (prop in self.unique_properties)
     return self.unique_cache[prop]
 
   def __del__(self):
@@ -220,8 +223,7 @@ class StoreFactsBot:
     })
     self.status_file.write(str(item), status_record.data(binary=True))
 
-  def get_wbtime(val):
-    date = sling.Date(val) # parse date from val
+  def get_wbtime(self, date):
     precision = precision_map[date.precision] # sling to wikidata
     if date.precision <= sling.YEAR:
       return pywikibot.WbTime(year=date.year, precision=precision)
@@ -279,7 +281,8 @@ class StoreFactsBot:
             self.log_status_skip(item, fact, "already had property")
             continue
           if claim.type == "time":
-            target = self.get_wbtime(val)
+            date = sling.Date(val) # parse date from val
+            target = self.get_wbtime(date)
             if target is None:
               self.log_status_skip(item, facts, "date precision exception")
               continue
@@ -289,7 +292,7 @@ class StoreFactsBot:
                 continue
               old = wd_claims[prop_str][0].getTarget()
               if old is not None:
-                if old.precision >= precision:
+                if old.precision >= target.precision:
                   self.log_status_skip(item, fact, "precise date already exists")
                   continue
                 if old.year != date.year:
