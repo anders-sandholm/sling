@@ -76,8 +76,7 @@ class StoreFactsBot:
     self.store.load("local/data/e/wiki/kb.sling")
     print "kb loaded"
 
-    #self.pa_item = self.store["/wp/page/item"]
-    self.pa_cat = self.store["/wp/page/category"]
+    self.page_cat = self.store["/wp/page/category"]
 
     self.date_of_birth = self.store['P569']
     self.date_of_death = self.store['P570']
@@ -101,6 +100,7 @@ class StoreFactsBot:
     self.languages = self.wiki.keys()
     self.wiki_sources = {}
     for lang, wp in self.wiki.iteritems():
+      # P143 means 'imported from Wikimedia project'
       source_claim = pywikibot.Claim(self.repo, "P143")
       target = pywikibot.ItemPage(self.repo, wp)
       source_claim.setTarget(target)
@@ -127,26 +127,16 @@ class StoreFactsBot:
                                    day=today.day)
     self.time_claim.setTarget(time_target)
 
-    self.unique_properties = {self.date_of_birth, self.date_of_death}
+    self.uniq_prop = {self.date_of_birth, self.date_of_death}
     kb = self.store
     # Collect unique-valued properties.
-    # They will be used to compute CONFLICT counts.
+    # They will be used to update claims in Wikidata accordingly.
     constraint_role = kb["P2302"]
     unique = kb["Q19474404"]         # single-value constraint
-    #w_time = kb["/w/time"]
-    #w_item = kb["/w/item"]
-    p_subproperty_of = kb["P1647"]
-    p_location = kb["P276"]
     for prop in kb["/w/entity"]("role"):
       for constraint_type in prop(constraint_role):
-        if constraint_type == unique or constraint_type["is"] == unique:
-          self.unique_properties.add(prop)
-    self.unique_cache = {}
-
-  def is_unique(self, prop):
-    if prop not in self.unique_cache:
-      self.unique_cache[prop] = (prop in self.unique_properties)
-    return self.unique_cache[prop]
+        if kb.resolve(constraint_type) == unique:
+          self.uniq_prop.add(prop)
 
   def __del__(self):
     self.status_file.close()
@@ -154,14 +144,14 @@ class StoreFactsBot:
 
   def get_sources(self, h_item, category):
     h_cat = self.store[category]
-    source_claim = pywikibot.Claim(self.repo, "P3452")
+    source_claim = pywikibot.Claim(self.repo, "P3452") # inferred from
     source_claim.setTarget(pywikibot.ItemPage(self.repo, category))
     sources = [source_claim, self.time_claim]
     for lang in self.languages:
       item_doc = self.record_db[lang].lookup(h_item.id)
       if item_doc is None: continue
       item_frame = sling.Store(self.store).parse(item_doc)
-      if h_cat in item_frame(self.pa_cat):
+      if h_cat in item_frame(self.page_cat):
         sources.append(self.wiki_sources[lang])
     return sources
 
@@ -276,10 +266,11 @@ class StoreFactsBot:
         prop_str = str(prop)
         fact = self.rs.frame({prop: val})
         claim = pywikibot.Claim(self.repo, prop_str)
-        if self.is_unique(prop):
-          if prop_str not in wd_claims and self.ever_had_prop(wd_item, prop_str):
-            self.log_status_skip(item, fact, "already had property")
-            continue
+        if prop in self.uniq_prop:
+          if prop_str not in wd_claims:
+            if self.ever_had_prop(wd_item, prop_str):
+              self.log_status_skip(item, fact, "already had property")
+              continue
           if claim.type == "time":
             date = sling.Date(val) # parse date from val
             target = self.get_wbtime(date)
@@ -293,7 +284,8 @@ class StoreFactsBot:
               old = wd_claims[prop_str][0].getTarget()
               if old is not None:
                 if old.precision >= target.precision:
-                  self.log_status_skip(item, fact, "precise date already exists")
+                  err_str = "precise date already exists"
+                  self.log_status_skip(item, fact, err_str)
                   continue
                 if old.year != date.year:
                   self.log_status_skip(item, fact, "conflicting year in date")
@@ -302,8 +294,8 @@ class StoreFactsBot:
                    old.month != date.month:
                   self.log_status_skip(item, fact, "conflicting month in date")
                   continue
-                # item already has property with a same year less precise date
-                # check that sources are all WP or empty
+                # Item already has property with a same year less precise date.
+                # Ensure sources are all WP or empty
                 if not self.all_WP(wd_claims[prop_str][0].getSources()):
                   self.log_status_skip(item, fact, "date with non-WP source(s)")
                   continue
