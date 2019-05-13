@@ -25,6 +25,12 @@ flags.define("--test",
              default=False,
              action='store_true')
 
+flags.define("--countonly",
+             help="only count changes - no status",
+             default=False,
+             action='store_true')
+
+
 precision_map = {
   sling.MILLENNIUM: pywikibot.WbTime.PRECISION['millenia'],
   sling.CENTURY: pywikibot.WbTime.PRECISION['century'],
@@ -81,6 +87,7 @@ class WikiMonitor:
           errors += 1
           continue
         updated += 1
+        if flags.arg.countonly: continue
         wd_item = pywikibot.ItemPage(self.repo, item_str)
         if wd_item.isRedirectPage():
           redirected += 1
