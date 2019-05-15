@@ -103,8 +103,8 @@ class ExtractWikipediaDates:
     for i in range(10):
       i_file = "local/data/e/wiki/en/documents-0000"+str(i)+"-of-00010.rec"
       print(i_file, records)
-      for (item_id_bytes, record) in sling.RecordReader(i_file):
-        item = self.kb[item_id_bytes.decode()]
+      for (item_id, record) in sling.RecordReader(i_file):
+        item = self.kb[item_id]
         if self.human not in item(self.instanceof): continue
         if self.precise_date(item(self.date_of_birth)) and \
            self.precise_date(item(self.date_of_death)): continue
