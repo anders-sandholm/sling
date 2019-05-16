@@ -70,7 +70,7 @@ PyObject *PyWikiConverter::ConvertWikidata(PyObject *args, PyObject *kw) {
   if (!PyArg_ParseTuple(args, "Os*", &pystore, &json)) return nullptr;
   if (!PyStore::TypeCheck(pystore)) return nullptr;
 
-  // Parse JSON..
+  // Parse JSON.
   ArrayInputStream stream(json.buf, json.len);
   Input input(&stream);
   Reader reader(pystore->store, &input);
