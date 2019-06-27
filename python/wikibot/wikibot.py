@@ -148,10 +148,13 @@ class StoreFactsBot:
     self.record_file.close()
 
   def get_sources(self, h_item, category):
+    sources = [self.time_claim]
+    cat_item = pywikibot.ItemPage(self.repo, category)
+    if cat_item.exists() and not cat_item.isRedirectPage():
+      source_claim = pywikibot.Claim(self.repo, "P3452") # inferred from
+      source_claim.setTarget(cat_item)
+      sources.append(source_claim)
     h_cat = self.store[category]
-    source_claim = pywikibot.Claim(self.repo, "P3452") # inferred from
-    source_claim.setTarget(pywikibot.ItemPage(self.repo, category))
-    sources = [source_claim, self.time_claim]
     for lang in self.languages:
       item_doc = self.record_db[lang].lookup(h_item.id)
       if item_doc is None: continue
@@ -255,6 +258,7 @@ class StoreFactsBot:
     updated = 0
     recno = 0
     url_prefix = "https://www.wikidata.org/wiki/"
+    oldval = ""
     for item_bytes, record in records:
       item_str = item_bytes.decode()
       recno += 1
@@ -291,6 +295,10 @@ class StoreFactsBot:
         prop_str = str(prop.id)
         fact = self.rs.frame({prop: val})
         claim = pywikibot.Claim(self.repo, prop_str)
+        if val != oldval:
+          oldval = val
+          print(provenance[self.n_category],
+                self.store[provenance[self.n_category]].name)
         if prop in self.uniq_prop:
           if prop_str not in wd_claims:
             if self.ever_had_prop(wd_item, prop_str):
@@ -372,6 +380,7 @@ class StoreFactsBot:
           claim.addSources(sources)
         self.log_status_stored(item, fact, rev_id)
         updated += 1
+      print("Record: ", recno, end=' ')
       if flags.arg.verbose: print("Item:", item.id, "Record: ", recno)
     print("Last record:", recno, "Total:", updated, "records updated.")
 
