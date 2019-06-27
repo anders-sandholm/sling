@@ -22,7 +22,14 @@ namespace sling {
 namespace myelin {
 
 // Reduction operations.
-enum Reduction {REDUCE_ADD, REDUCE_MUL, REDUCE_MIN, REDUCE_MAX};
+enum Reduction {
+  REDUCE_ADD,
+  REDUCE_MUL,
+  REDUCE_MIN,
+  REDUCE_MAX,
+  REDUCE_AND,
+  REDUCE_OR
+};
 
 // Register allocation.
 class Registers {
@@ -57,12 +64,15 @@ class Registers {
   // Allocate fixed register.
   Register alloc_fixed(Register r);
 
-  // Allocate temporary register that is neither preserved or used as an
+  // Allocate temporary register that is neither preserved nor used as an
   // argument register.
   Register alloc_temp();
 
   // Allocate argument register (1-6) or return register (0).
   Register arg(int n);
+
+  // Allocate extra preserved register. This needs to be restored and freed.
+  Register alloc_extra();
 
   // Mark register as being in use.
   void use(int r) { used_regs_ |= (1 << r); }
@@ -99,6 +109,10 @@ class Registers {
   static bool preserved(int r) { return ((1 << r) & kPreservedRegisters) != 0; }
   static bool preserved(Register r) { return preserved(r.code()); }
 
+  // Check if register is an extra callee-saved register.
+  static bool extra(int r) { return ((1 << r) & kExtraRegisters) != 0; }
+  static bool extra(Register r) { return extra(r.code()); }
+
   // Return the number of free registers.
   int num_free() const;
 
@@ -108,6 +122,14 @@ class Registers {
     1 << Register::kCode_rbx |
     1 << Register::kCode_rsp |
     1 << Register::kCode_rbp |
+    1 << Register::kCode_r12 |
+    1 << Register::kCode_r13 |
+    1 << Register::kCode_r14 |
+    1 << Register::kCode_r15;
+
+  // Extra callee-saved registers.
+  static const int kExtraRegisters =
+    1 << Register::kCode_rbx |
     1 << Register::kCode_r12 |
     1 << Register::kCode_r13 |
     1 << Register::kCode_r14 |
@@ -253,13 +275,18 @@ class StaticData {
   Label *location() { return &location_; }
 
   // Address of data block as operand.
-  const Operand address() const { return address_; }
+  const Operand &address() const { return address_; }
+
+  // External symbol name.
+  const string &symbol() const { return symbol_; }
+  void set_symbol(const string &symbol) { symbol_ = symbol; }
 
  private:
   int alignment_;            // required alignment for data
   std::vector<uint8> data_;  // data in data block
   Label location_;           // location of data in generated code block
   Operand address_;          // pc-relative address of data in code block
+  string symbol_;            // external symbol name
 };
 
 // Macro assembler for generating code for computations.
@@ -271,6 +298,7 @@ class MacroAssembler : public jit::Assembler {
   typedef jit::ZMMRegister ZMMRegister;
   typedef jit::OpmaskRegister OpmaskRegister;
   typedef jit::Label Label;
+  typedef jit::Operand Operand;
 
   MacroAssembler(void *buffer, int buffer_size, const Options &options);
   ~MacroAssembler();
@@ -285,7 +313,8 @@ class MacroAssembler : public jit::Assembler {
   StaticData *CreateDataBlock(int alignment = 1);
 
   // Find existing static data block.
-  StaticData *FindDataBlock(const void *data, int size, int repeat);
+  StaticData *FindDataBlock(const void *data, int size, int repeat = 1);
+  StaticData *FindDataBlock(const void *data, int size, const string &symbol);
 
   // Create new static data block with (repeated) constant.
   template<typename T> StaticData *Constant(T value, int repeat = 1) {
@@ -314,6 +343,18 @@ class MacroAssembler : public jit::Assembler {
     return data;
   }
 
+  // Get static data block for external reference.
+  StaticData *GetExtern(const string &symbol, const void *address) {
+    int size = sizeof(void *);
+    StaticData *data = FindDataBlock(&address, size, symbol);
+    if (data == nullptr) {
+      data = CreateDataBlock(size);
+      data->AddData(&address, size);
+      data->set_symbol(symbol);
+    }
+    return data;
+  }
+
   // Generate static data blocks in the code buffer.
   void GenerateDataBlocks();
 
@@ -322,6 +363,9 @@ class MacroAssembler : public jit::Assembler {
 
   // Load address of element in tensor.
   void LoadTensorAddress(Register dst, Tensor *tensor, Tensor *indices);
+
+  // Load address of tensor on device.
+  void LoadTensorDeviceAddress(Register dst, Tensor *tensor);
 
   // Emit breakpoint.
   void Breakpoint() { int3(); }
@@ -348,6 +392,10 @@ class MacroAssembler : public jit::Assembler {
   void Accumulate(Reduction op, Type type, XMMRegister acc, XMMRegister r);
   void Accumulate(Reduction op, Type type, YMMRegister acc, YMMRegister r);
   void Accumulate(Reduction op, Type type, ZMMRegister acc, ZMMRegister r);
+  void Accumulate(Reduction op, Type type, XMMRegister acc, const Operand &src);
+  void Accumulate(Reduction op, Type type, YMMRegister acc, const Operand &src);
+  void Accumulate(Reduction op, Type type, ZMMRegister acc, const Operand &src,
+                  OpmaskRegister k = jit::no_opmask_reg);
 
   // Reduction operation over all elements in an accumulator register using an
   // auxiliary register.
@@ -376,8 +424,20 @@ class MacroAssembler : public jit::Assembler {
   // Wait for task to complete.
   void WaitForTask(int offset);
 
+  // Wait for main task to complete.
+  void WaitForMainTask();
+
   // Reset register usage.
   void ResetRegisterUsage();
+
+  // Call to external function.
+  void call_extern(const void *func, const string &symbol) {
+    if (options_.pic) {
+      call(func, symbol);
+    } else {
+      call(GetExtern(symbol, func)->address());
+    }
+  }
 
   // Type-dependent instructions.
   void vpermil(Type type, XMMRegister dst, XMMRegister src, int8_t imm8);

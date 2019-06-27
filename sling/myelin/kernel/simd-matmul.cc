@@ -36,17 +36,18 @@ class MatMulArgs {
     void Init(Tensor *tensor, bool transposed) {
       this->tensor = tensor;
       this->transposed = transposed;
-      if (transposed) {
-        this->shape = tensor->shape().transpose();
-      } else {
-        this->shape = tensor->shape();
+      int r = rank();
+      outer = r - 2;
+      inner = r - 1;
+      batch = r - 2;
+      if (tensor->order() == COLUMN_MAJOR) {
+        std::swap(outer, inner);
       }
     }
 
     // Transpose argument representation.
     void Transpose() {
       transposed = !transposed;
-      shape = shape.transpose();
     }
 
     // Element order with respect to transpose.
@@ -59,36 +60,55 @@ class MatMulArgs {
       return tensor->order();
     }
 
-    // Outer dimension in tensor array.
-    int outer() const { return tensor->order() == ROW_MAJOR ? 0 : 1; }
+    // Height (outer dimension) of matrix w.r.t. physical layout.
+    int height() const { return tensor->dim(outer); }
 
-    // Inner dimension in tensor array.
-    int inner() const { return tensor->order() == ROW_MAJOR ? 1 : 0; }
+    // Width (inner dimension) of matrix  w.r.t. physical layout.
+    int width() const { return tensor->dim(inner); }
 
-    // Height (outer dimension) of tensor array
-    int height() const { return tensor->dim(outer()); }
+    // Number of rows in (transposed) matrix  w.r.t. logical layout.
+    int rows() const {
+      return tensor->dim(tensor->rank() - (transposed ? 1 : 2));
+    }
 
-    // Width (inner dimension) of tensor array.
-    int width() const { return tensor->dim(inner()); }
+    // Number of columns in (transposed) matrix  w.r.t. logical layout.
+    int columns() const {
+      return tensor->dim(tensor->rank() - (transposed ? 2 : 1));
+    }
 
-    // Number of elements in tensor array.
-    int elements() const { return tensor->elements(); }
+    // Number of elements in matrix.
+    int elements() const { return tensor->shape().inner(batch); }
 
-    // Size of tensor in bytes.
-    int size() const { return tensor->size(); }
+    // Size of matrix in bytes.
+    int size() const {
+      return batch > 0 ? tensor->stride(batch - 1) : tensor->size();
+    }
 
-    // Number of bytes per row including padding.
-    int stride() const { return tensor->stride(outer()); }
+    // Size of outer dimension including padding.
+    int stride() const { return tensor->stride(outer); }
 
-    // Padding bytes per row.
-    int padding() const { return tensor->padding(outer()); }
+    // Padding bytes for outer dimension.
+    int padding() const { return tensor->padding(outer); }
+
+    // Batch size.
+    int batch_size() const { return tensor->shape().outer(batch); }
+
+    // Batch stride.
+    int batch_stride() const {
+      return batch == 0 ? tensor->size() : tensor->stride(batch - 1);
+    }
 
     // Data type for underlying tensor.
     Type type() const { return tensor->type(); }
 
+    // Rank for underlying tensor.
+    int rank() const { return tensor->rank(); }
+
     Tensor *tensor;   // underlying tensor for argument
-    Shape shape;      // shape after transposition
     bool transposed;  // argument transposition
+    int outer;        // outer dimension for matrix
+    int inner;        // inner dimension for matrix
+    int batch;        // number of batch dimensions
   };
 
   // Check if inputs and outputs are valid for a matrix multiplication.
@@ -159,16 +179,19 @@ class MatMulArgs {
     c_.tensor->RequireOrder(required);
   }
 
-  // Check that argument shapes match a matrix multiplication.
+  // Check that argument shapes match a (batched) matrix multiplication.
   bool CheckShapes() const {
-    // Check that tensors are matrices.
-    if (a_.shape.rank() != 2) return false;
-    if (b_.shape.rank() != 2) return false;
-    if (c_.shape.rank() != 2) return false;
+    // Check that tensors are (same-sized batches of) matrices.
+    if (a_.rank() < 2) return false;
+    if (b_.rank() != a_.rank()) return false;
+    if (c_.rank() != a_.rank()) return false;
 
-    if (a_.shape.dim(0) != c_.shape.dim(0)) return false;
-    if (a_.shape.dim(1) != b_.shape.dim(0)) return false;
-    if (b_.shape.dim(1) != c_.shape.dim(1)) return false;
+    if (c_.rows() != a_.rows()) return false;
+    if (c_.columns() != b_.columns()) return false;
+    if (a_.columns() != b_.rows()) return false;
+
+    if (a_.batch_size() != c_.batch_size()) return false;
+    if (b_.batch_size() != c_.batch_size()) return false;
 
     return true;
   }
@@ -235,6 +258,12 @@ class SIMDMatMul : public Kernel {
     MatMulArgs args(step);
     args.RequireOrder(ROW_MAJOR);
 
+    // Inputs must be row-major for batched matmul.
+    if (args.a().batch_size() != 1) {
+      args.a().tensor->RequireOrder(ROW_MAJOR);
+      args.b().tensor->RequireOrder(ROW_MAJOR);
+    }
+
     // Set alignment.
     Type type = args.c().type();
     int vecbytes = SIMDAssembler::VectorBytes(type);
@@ -243,7 +272,9 @@ class SIMDMatMul : public Kernel {
     args.c().tensor->SetMiniumAlignment(vecbytes);
 
     // Reserve registers.
-    step->SetRegisterUsage(SIMDAssembler::RegisterUsage(type) + 8);
+    int regs = SIMDAssembler::RegisterUsage(type) + 8;
+    if (args.a().batch_size() > 1) regs++;
+    step->SetRegisterUsage(regs);
   }
 
   void Generate(Step *step, MacroAssembler *masm) override {
@@ -264,6 +295,12 @@ class SIMDMatMul : public Kernel {
     } else {
       LOG(FATAL) << "Unsupported element order";
     }
+
+    // Add batch size to variant.
+    int batch_size = args.a().batch_size();
+    if (batch_size > 1) {
+      step->set_variant(step->variant() + "*" + std::to_string(batch_size));
+    }
   }
 
   // Compute dot products between rows/columns in A and column blocks in B using
@@ -272,9 +309,10 @@ class SIMDMatMul : public Kernel {
   void GenerateVertical(Step *step, MacroAssembler *masm,
                         const MatMulArgs &args, bool strided) {
     // Create SIMD code generators.
-    Type type = args.c().tensor->type();
+    Type type = args.c().type();
     int dsize = TypeTraits::of(type).size();
-    int vecbytes = SIMDAssembler::VectorBytes(args.c().type());
+    int vecbytes = SIMDAssembler::VectorBytes(type);
+    int batchsize = args.a().batch_size();
     SIMDAssembler sasm(masm, type, args.Aligned(vecbytes));
     step->set_variant(sasm.name() + (strided ? "CR" : "RR"));
     if (strided) {
@@ -303,20 +341,31 @@ class SIMDMatMul : public Kernel {
     __ LoadTensorAddress(c, args.c().tensor);
 
     // Compute inner and outer dimensions.
-    int outer_step, outer_limit, inner_step, inner_limit;
+    int outer_step, outer_limit, inner_step, inner_limit, batch_skip;
     if (strided) {
       outer_step = dsize;
       outer_limit = dsize * args.a().width();
       inner_step = args.a().stride();
       inner_limit = args.a().stride() * args.a().height();
+      batch_skip = args.a().size() - outer_limit;
     } else {
       outer_step = args.a().stride();
       outer_limit = args.a().stride() * args.a().height();
       inner_step = dsize;
       inner_limit = dsize * args.a().width();
+      batch_skip = 0;
     }
     bool outer_single = outer_step == outer_limit;
     bool inner_single = inner_step == inner_limit;
+
+    // Loop over batches.
+    Register batch = no_reg;
+    Label lb;
+    if (batchsize > 1) {
+      batch = masm->rr().alloc();
+      __ xorq(batch, batch);
+      __ bind(&lb);
+    }
 
     // Loop over rows/columns in A.
     Register a_end = masm->rr().alloc();
@@ -485,9 +534,22 @@ class SIMDMatMul : public Kernel {
       __ cmpq(a, a_end);
       __ j(less, &l1);
     }
+
+    // Next batch.
+    if (batchsize > 1) {
+      if (outer_single) {
+        __ addq(a, Immediate(outer_step));
+      } else if (batch_skip != 0) {
+        __ addq(a, Immediate(batch_skip));
+      }
+      __ addq(b, Immediate(args.b().batch_stride()));
+      __ incq(batch);
+      __ cmpq(batch, Immediate(batchsize));
+      __ j(less, &lb);
+    }
   }
 
-  // Compute dot products between row blocks in A and row blocks in B  using
+  // Compute dot products between row blocks in A and row blocks in B using
   // horizontal summation.
   void GenerateHorizontal(Step *step, MacroAssembler *masm,
                           const MatMulArgs &args) {
@@ -498,6 +560,7 @@ class SIMDMatMul : public Kernel {
     SIMDAssembler sasm(masm, type, args.Aligned(vecbytes));
     step->set_variant(sasm.name() + "RC");
     CHECK_EQ(args.a().width(), args.b().width());
+    CHECK_EQ(args.a().batch_size(), 1);
 
     // Compute vector processing strategy.
     SIMDStrategy strategy(&sasm, args.b().width());
@@ -643,11 +706,13 @@ class SIMDMatMul : public Kernel {
     SIMDAssembler sasm(masm, type, true);
     step->set_variant(sasm.name() + "CC");
     CHECK_EQ(args.a().height(), args.b().width());
+    CHECK_EQ(args.a().batch_size(), 1);
 
-    // Allocate registers.
-    Register a = masm->rr().alloc();
-    Register b = masm->rr().alloc();
-    Register c = masm->rr().alloc();
+    // Allocate registers. Allocate some preserved registers to avoid register
+    // overflow.
+    Register a = masm->rr().alloc_extra();
+    Register b = masm->rr().alloc_extra();
+    Register c = masm->rr().alloc_extra();
     Register b_ptr = masm->rr().alloc();
     Register a_end = masm->rr().alloc();
     Register b_end = masm->rr().alloc();
@@ -655,6 +720,11 @@ class SIMDMatMul : public Kernel {
     Register b_ofs = masm->rr().alloc();
     auto elem = sasm.alloc();
     auto sum = sasm.alloc();
+
+    // Save preserved registers.
+    __ pushq(a);
+    __ pushq(b);
+    __ pushq(c);
 
     // Load tensor addresses.
     __ LoadTensorAddress(a, args.a().tensor);
@@ -716,18 +786,29 @@ class SIMDMatMul : public Kernel {
       __ cmpq(a, a_end);
       __ j(less, &l1);
     }
+
+    // Restore preserved registers.
+    __ popq(c);
+    __ popq(b);
+    __ popq(a);
+    masm->rr().release(a);
+    masm->rr().release(b);
+    masm->rr().release(c);
+    masm->rr().free(a);
+    masm->rr().free(b);
+    masm->rr().free(c);
   }
 
   int64 Complexity(const Step *step) override {
     MatMulArgs args(step);
     int64 ops = args.c().tensor->elements();
-    ops *= args.a().shape.dim(1);
+    ops *= args.a().columns();
     ops *= 2;
     return  ops;
   }
 
  private:
-  bool accumulate_;  // matmul with assignment.
+  bool accumulate_;  // matmul with assignment
 };
 
 void RegisterSIMDMatMulLibrary(Library *library) {

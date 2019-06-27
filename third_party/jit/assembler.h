@@ -404,7 +404,8 @@ class Assembler : public CodeGenerator {
   void repstosq() { emit_repstos(kInt64Size); }
 
   // Loads an external reference into a register.
-  void load_extern(Register dst, const void *ptr, const string &symbol);
+  void load_extern(Register dst, const void *ptr, const string &symbol,
+                   bool pic = false);
 
   // Instruction to load from an immediate 64-bit pointer into RAX.
   void load_rax(const void *ptr);
@@ -682,6 +683,9 @@ class Assembler : public CodeGenerator {
   // Call near absolute indirect, address in register
   void call(Register adr);
 
+  // Call external using pc-relative relocation.
+  void call(const void *target, const string &symbol);
+
   // Jumps
   // Jump short or near relative.
   // Use a 32-bit signed displacement.
@@ -788,6 +792,8 @@ class Assembler : public CodeGenerator {
 
   void sqrtss(XMMRegister dst, XMMRegister src);
   void sqrtss(XMMRegister dst, const Operand &src);
+  void rsqrtss(XMMRegister dst, XMMRegister src);
+  void rsqrtss(XMMRegister dst, const Operand &src);
 
   void ucomiss(XMMRegister dst, XMMRegister src);
   void ucomiss(XMMRegister dst, const Operand &src);
@@ -983,12 +989,15 @@ class Assembler : public CodeGenerator {
   void rcpss(XMMRegister dst, const Operand &src);
   void rcpps(XMMRegister dst, XMMRegister src);
   void rcpps(XMMRegister dst, const Operand &src);
-  void rsqrtps(XMMRegister dst, XMMRegister src);
-  void rsqrtps(XMMRegister dst, const Operand &src);
+
   void sqrtps(XMMRegister dst, XMMRegister src);
   void sqrtps(XMMRegister dst, const Operand &src);
   void sqrtpd(XMMRegister dst, XMMRegister src);
   void sqrtpd(XMMRegister dst, const Operand &src);
+
+  void rsqrtps(XMMRegister dst, XMMRegister src);
+  void rsqrtps(XMMRegister dst, const Operand &src);
+
   void movups(XMMRegister dst, XMMRegister src);
   void movups(XMMRegister dst, const Operand &src);
   void movups(const Operand &dst, XMMRegister src);
@@ -2339,6 +2348,26 @@ class Assembler : public CodeGenerator {
   }
   void vsqrtpd(YMMRegister dst, const Operand &src) {
     vinstr(0x51, dst, ymm0, src, k66, k0F, kWIG);
+  }
+
+  void vrsqrtss(XMMRegister dst, XMMRegister src1, XMMRegister src2) {
+    vinstr(0x52, dst, src1, src2, kF3, k0F, kWIG);
+  }
+  void vrsqrtss(XMMRegister dst, XMMRegister src1, const Operand &src2) {
+    vinstr(0x52, dst, src1, src2, kF3, k0F, kWIG);
+  }
+
+  void vrsqrtps(XMMRegister dst, XMMRegister src) {
+    vinstr(0x52, dst, xmm0, src, kNone, k0F, kWIG);
+  }
+  void vrsqrtps(XMMRegister dst, const Operand &src) {
+    vinstr(0x52, dst, xmm0, src, kNone, k0F, kWIG);
+  }
+  void vrsqrtps(YMMRegister dst, YMMRegister src) {
+    vinstr(0x52, dst, ymm0, src, kNone, k0F, kWIG);
+  }
+  void vrsqrtps(YMMRegister dst, const Operand &src) {
+    vinstr(0x52, dst, ymm0, src, kNone, k0F, kWIG);
   }
 
   void vzeroall();

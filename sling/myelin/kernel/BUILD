@@ -13,6 +13,7 @@ cc_library(
   deps = [
     "//sling/base",
     "//sling/myelin:compute",
+    "//sling/myelin:simd-assembler",
   ],
 )
 
@@ -102,6 +103,7 @@ cc_library(
 cc_library(
   name = "cuda",
   srcs = [
+    "cublas-matmul.cc",
     "cuda.cc",
     "cuda-array.cc",
     "cuda-matmul.cc",
@@ -113,6 +115,19 @@ cc_library(
     "//sling/myelin:compute",
     "//sling/myelin:express",
     "//sling/myelin/cuda:cuda-kernel",
+  ],
+)
+
+cc_library(
+  name = "mkl",
+  srcs = ["mkl.cc"],
+  hdrs = ["mkl.h"],
+  deps = [
+    "//sling/base",
+    "//sling/myelin:compute",
+  ],
+  linkopts = [
+    "-ldl",
   ],
 )
 
