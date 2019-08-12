@@ -587,6 +587,22 @@ class Builder:
     result.type = DT_INT
     return result
 
+  def assign(self, x, y, name=None):
+    op = self.rawop("Assign", name)
+    op.add_input(x)
+    op.add_input(y)
+
+  def scatter_add(self, m, f, v, ref=False, name=None):
+    op = self.rawop("ScatterAdd", name)
+    op.add_input(m)
+    op.add_input(f)
+    op.add_input(v)
+    if ref:
+      r = self.var(op.name + "/ref", m.type, m.shape)
+      r.ref = True
+      op.add_output(r)
+      return r
+
 
 # Set builder factory for flows.
 def builder_factory(flow, name):
