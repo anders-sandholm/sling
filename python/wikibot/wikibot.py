@@ -103,13 +103,6 @@ class StoreFactsBot:
                  'pl': 'Q1551807', 'de': 'Q48183',  'nl': 'Q10000', \
                  'sv': 'Q169514',  'it': 'Q11920',  'no': 'Q191769'}
     self.languages = self.wiki.keys()
-    self.wiki_sources = {}
-    for lang, wp in self.wiki.items():
-      # P143 means 'imported from Wikimedia project'
-      source_claim = pywikibot.Claim(self.repo, "P143")
-      target = pywikibot.ItemPage(self.repo, wp)
-      source_claim.setTarget(target)
-      self.wiki_sources[lang] = source_claim
     self.record_db = {}
     fname = "local/data/e/wiki/{}/documents@10.rec"
     for lang in self.languages:
@@ -119,14 +112,6 @@ class StoreFactsBot:
     self.source_claim = pywikibot.Claim(self.repo, "P3452")
     # Wikimedia import URL
     self.url_source_claim = pywikibot.Claim(self.repo, "P4656")
-
-    # referenced (on)
-    self.time_claim = pywikibot.Claim(self.repo, "P813")
-    today = datetime.date.today()
-    time_target = pywikibot.WbTime(year=today.year,
-                                   month=today.month,
-                                   day=today.day)
-    self.time_claim.setTarget(time_target)
 
     self.uniq_prop = {self.date_of_birth, self.date_of_death}
     kb = self.store
@@ -143,8 +128,25 @@ class StoreFactsBot:
     self.status_file.close()
     self.record_file.close()
 
+  def get_time_claim(self):
+    # referenced (on)
+    time_claim = pywikibot.Claim(self.repo, "P813")
+    today = datetime.date.today()
+    time_target = pywikibot.WbTime(year=today.year,
+                                   month=today.month,
+                                   day=today.day)
+    time_claim.setTarget(time_target)
+    return time_claim
+
+  def get_wiki_source(self, lang):
+    # P143 means 'imported from Wikimedia project'
+    source_claim = pywikibot.Claim(self.repo, "P143")
+    target = pywikibot.ItemPage(self.repo, self.wiki[lang])
+    source_claim.setTarget(target)
+    return source_claim
+
   def get_sources(self, h_item, category):
-    sources = [self.time_claim]
+    sources = [self.get_time_claim()]
     cat_item = pywikibot.ItemPage(self.repo, category)
     if cat_item.exists() and not cat_item.isRedirectPage():
       source_claim = pywikibot.Claim(self.repo, "P3452") # inferred from
@@ -156,7 +158,7 @@ class StoreFactsBot:
       if item_doc is None: continue
       item_frame = sling.Store(self.store).parse(item_doc)
       if h_cat in item_frame(self.page_cat):
-        sources.append(self.wiki_sources[lang])
+        sources.append(self.get_wiki_source(lang))
     return sources
 
   def get_url_sources(self, url):
