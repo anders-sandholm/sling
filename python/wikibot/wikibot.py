@@ -119,10 +119,6 @@ class StoreFactsBot:
     self.source_claim = pywikibot.Claim(self.repo, "P3452")
     # Wikimedia import URL
     self.url_source_claim = pywikibot.Claim(self.repo, "P4656")
-    # imported from Wikimedia project
-    self.wp_source_claim = pywikibot.Claim(self.repo, "P143")
-    self.en_wp = pywikibot.ItemPage(self.repo, "Q328")
-    self.wp_source_claim.setTarget(self.en_wp)
 
     # referenced (on)
     self.time_claim = pywikibot.Claim(self.repo, "P813")
@@ -169,7 +165,11 @@ class StoreFactsBot:
     return [self.url_source_claim, self.time_claim]
 
   def get_wp_sources(self):
-    return [self.wp_source_claim]
+    # imported from Wikimedia project
+    wp_source_claim = pywikibot.Claim(self.repo, "P143")
+    en_wp = pywikibot.ItemPage(self.repo, "Q328")
+    wp_source_claim.setTarget(en_wp)
+    return [wp_source_claim]
 
   def all_WP(self, sources):
     if not sources: return True
