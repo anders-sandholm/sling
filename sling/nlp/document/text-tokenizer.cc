@@ -890,7 +890,6 @@ void StandardTokenization::Init(CharacterFlags *char_flags) {
   AddTokenType("wanna", TOKEN_WORD | TOKEN_SPLIT | 3);
 
   // Clitics splitting.
-  /*
   AddTokenType("d'", 0);
   AddTokenType("l'", 0);
   AddTokenType("all'", 0);
@@ -898,7 +897,6 @@ void StandardTokenization::Init(CharacterFlags *char_flags) {
   AddTokenType("dall'", 0);
   AddTokenType("nell'", 0);
   AddTokenType("sull'", 0);
-  */
 
   // Breaking tag tokens.
   const char **tag = kBreakingTags;
