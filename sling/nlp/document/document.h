@@ -176,6 +176,13 @@ class Span {
   // linked together left-to-right through the sibling pointers.
   Span *sibling() const { return sibling_; }
 
+  // Returns outer-most containing span.
+  Span *outer() {
+    Span *s = this;
+    while (s->parent_ != nullptr) s = s->parent_;
+    return s;
+  }
+
   // Adds frame evocation to span.
   void Evoke(const Frame &frame);
   void Evoke(Handle frame);
@@ -197,9 +204,13 @@ class Span {
   // Returns all evoked frames.
   void AllEvoked(Handles *evoked) const;
 
+  // Checks if span evokes a certain frame.
+  bool Evokes(Handle frame) const;
+  bool Evokes(const Frame &frame) const { return Evokes(frame.handle()); }
+
   // Checks if span evokes a certain type of frame.
-  bool Evokes(Handle type) const;
-  bool Evokes(const Name &type) const;
+  bool EvokesType(Handle type) const;
+  bool EvokesType(const Name &type) const;
 
   // Returns fingerprint for span phrase.
   uint64 Fingerprint() const;
@@ -242,7 +253,8 @@ class Document {
   explicit Document(const Frame &top, const DocumentNames *names = nullptr);
 
   // Copy constructor for making a shallow copy of the whole document.
-  Document(const Document &other);
+  Document(const Document &other, bool annotations);
+  Document(const Document &other) : Document(other, true) {}
 
   // Make a shallow copy of parts of the document. Only annotations within the
   // token range are copied.

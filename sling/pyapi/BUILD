@@ -32,7 +32,6 @@ cc_library(
     "pywiki.h",
   ],
   deps = [
-    ":tasks",
     "//sling/base",
     "//sling/file",
     "//sling/file:recordio",
@@ -45,6 +44,7 @@ cc_library(
     "//sling/myelin:compiler",
     "//sling/myelin:compute",
     "//sling/myelin:gradient",
+    "//sling/myelin:profile",
     "//sling/nlp/document",
     "//sling/nlp/document:document-tokenizer",
     "//sling/nlp/document:lex",
@@ -68,6 +68,7 @@ cc_library(
     "-Wno-invalid-offsetof",
     "-DPYVER=35"
   ],
+  alwayslink = 1,
 )
 
 cc_library(
@@ -88,6 +89,8 @@ cc_library(
     "//sling/nlp/embedding:fact-embeddings",
     "//sling/nlp/embedding:word-embeddings",
     "//sling/nlp/embedding:fact-plausibility",
+
+    "//sling/nlp/parser:caspar-trainer",
 
     "//sling/nlp/ner:idf",
     "//sling/nlp/ner:labeler",
@@ -110,6 +113,7 @@ cc_binary(
   name = "pysling.so",
   deps = [
     ":pyapi",
+    ":tasks",
     "//sling/base",
     "//sling/file:posix",
   ],

@@ -106,20 +106,15 @@ cc_library(
 )
 
 cc_library(
-  name = "document-source",
-  srcs = ["document-source.cc"],
-  hdrs = ["document-source.h"],
+  name = "document-corpus",
+  srcs = ["document-corpus.cc"],
+  hdrs = ["document-corpus.h"],
   deps = [
     ":document",
     "//sling/base",
     "//sling/file:recordio",
-    "//sling/frame:object",
     "//sling/frame:serialization",
     "//sling/frame:store",
-    "//sling/stream:input",
-    "//sling/stream:stream",
-    "//sling/stream:zipfile",
-    "//sling/string",
   ],
 )
 
@@ -244,7 +239,9 @@ cc_library(
   name = "annotator-components",
   deps = [
     "//sling/nlp/ner:labeler",
+    "//sling/nlp/ner:anaphora",
     "//sling/nlp/ner:phrases",
+    "//sling/nlp/ner:relations",
     "//sling/nlp/parser:parser-annotator",
   ],
 )
