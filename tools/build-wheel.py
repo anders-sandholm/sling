@@ -74,7 +74,6 @@ files = {
   'python/myelin/__init__.py': '$DATA$/sling/myelin/__init__.py',
   'python/myelin/builder.py': '$DATA$/sling/myelin/builder.py',
   'python/myelin/flow.py': '$DATA$/sling/myelin/flow.py',
-  'python/myelin/lexical_encoder.py': '$DATA$/sling/myelin/lexical_encoder.py',
   'python/myelin/nn.py': '$DATA$/sling/myelin/nn.py',
   'python/myelin/tf.py': '$DATA$/sling/myelin/tf.py',
 
@@ -85,7 +84,7 @@ files = {
   'python/task/__init__.py': '$DATA$/sling/task/__init__.py',
   'python/task/corpora.py': '$DATA$/sling/task/corpora.py',
   'python/task/download.py': '$DATA$/sling/task/download.py',
-  'python/task/entity.py': '$DATA$/sling/task/entity.py',
+  'python/task/silver.py': '$DATA$/sling/task/silver.py',
   'python/task/embedding.py': '$DATA$/sling/task/embedding.py',
   'python/task/wiki.py': '$DATA$/sling/task/wiki.py',
   'python/task/workflow.py': '$DATA$/sling/task/workflow.py',

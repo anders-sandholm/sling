@@ -54,7 +54,7 @@ cc_library(
     "//sling/nlp/kb:facts",
     "//sling/nlp/kb:phrase-table",
     "//sling/nlp/parser",
-    "//sling/nlp/parser/trainer:frame-evaluation",
+    "//sling/nlp/parser:frame-evaluation",
     "//sling/nlp/wiki:wikidata-converter",
     "//sling/task:dashboard",
     "//sling/task:job",
@@ -92,9 +92,10 @@ cc_library(
 
     "//sling/nlp/parser:caspar-trainer",
 
-    "//sling/nlp/ner:idf",
-    "//sling/nlp/ner:labeler",
+    "//sling/nlp/silver:idf",
+    "//sling/nlp/silver:annotators",
 
+    "//sling/task:documents",
     "//sling/task:frame-store-reader",
     "//sling/task:frame-store-writer",
     "//sling/task:sharder",
@@ -105,6 +106,7 @@ cc_library(
     "//sling/task:text-file-writer",
     "//sling/task:text-map-reader",
     "//sling/task:text-map-writer",
+    "//sling/task:pipe-reader",
     "//sling/task:workers",
   ],
 )

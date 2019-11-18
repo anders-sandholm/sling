@@ -28,45 +28,23 @@ cc_library(
 )
 
 cc_library(
-  name = "resolver",
-  srcs = ["resolver.cc"],
-  hdrs = ["resolver.h"],
-  deps = [
-    "//sling/base",
-    "//sling/frame:object",
-    "//sling/frame:store",
-    "//sling/nlp/kb:phrase-table",
-    "//sling/util:top",
-    "//sling/util:unicode",
-  ],
-)
-
-cc_library(
-  name = "annotators",
-  srcs = ["annotators.cc"],
-  hdrs = ["annotators.h"],
+  name = "mentions",
+  srcs = ["mentions.cc"],
+  hdrs = ["mentions.h"],
   deps = [
     ":chart",
     ":idf",
-    ":resolver",
     "//sling/frame:object",
     "//sling/frame:serialization",
     "//sling/frame:store",
     "//sling/nlp/document",
+    "//sling/nlp/document:annotator",
     "//sling/nlp/document:fingerprinter",
     "//sling/nlp/document:phrase-tokenizer",
     "//sling/nlp/kb:calendar",
     "//sling/nlp/kb:facts",
     "//sling/nlp/kb:phrase-table",
-  ],
-)
-
-cc_library(
-  name = "labeler",
-  srcs = ["labeler.cc"],
-  deps = [
-    ":annotators",
-    "//sling/nlp/document:annotator",
+    "//sling/nlp/kb:resolver",
   ],
   alwayslink = 1,
 )
@@ -110,6 +88,16 @@ cc_library(
     "//sling/nlp/kb:facts",
   ],
   alwayslink = 1,
+)
+
+cc_library(
+  name = "annotators",
+  deps = [
+    ":mentions",
+    ":anaphora",
+    ":phrases",
+    ":relations",
+  ],
 )
 
 cc_binary(

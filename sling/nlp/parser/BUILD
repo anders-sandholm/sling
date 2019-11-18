@@ -130,15 +130,48 @@ cc_library(
 )
 
 cc_library(
+  name = "frame-evaluation",
+  hdrs = ["frame-evaluation.h"],
+  srcs = ["frame-evaluation.cc"],
+  deps = [
+    "//sling/base",
+    "//sling/file",
+    "//sling/frame:object",
+    "//sling/frame:serialization",
+    "//sling/frame:store",
+    "//sling/nlp/document:document",
+    "//sling/nlp/document:document-corpus",
+    "//sling/string:strcat",
+    "//sling/string:printf",
+  ],
+)
+
+cc_library(
+  name = "transition-generator",
+  hdrs = ["transition-generator.h"],
+  srcs = ["transition-generator.cc"],
+  deps = [
+    ":parser-action",
+    "//sling/base",
+    "//sling/frame:object",
+    "//sling/frame:serialization",
+    "//sling/frame:store",
+    "//sling/nlp/document:document",
+  ],
+)
+
+cc_library(
   name = "parser-trainer",
   srcs = ["parser-trainer.cc"],
   hdrs = ["parser-trainer.h"],
   deps = [
+    "frame-evaluation",
     ":parser-action",
     ":parser-features",
     ":roles",
     "//sling/base",
     "//sling/frame:store",
+    "//sling/frame:serialization",
     "//sling/myelin:builder",
     "//sling/myelin:compiler",
     "//sling/myelin:gradient",
@@ -147,7 +180,6 @@ cc_library(
     "//sling/nlp/document:document-corpus",
     "//sling/nlp/document:lexical-encoder",
     "//sling/nlp/document:lexicon",
-    "//sling/nlp/parser/trainer:frame-evaluation",
     "//sling/task:learner",
     "//sling/util:mutex",
     "//sling/util:unicode",
@@ -159,6 +191,7 @@ cc_library(
   srcs = ["caspar-trainer.cc"],
   deps = [
     ":parser-trainer",
+    ":transition-generator",
     "//sling/base",
     "//sling/myelin:builder",
     "//sling/myelin:flow",
@@ -166,7 +199,6 @@ cc_library(
     "//sling/myelin:learning",
     "//sling/nlp/document:document",
     "//sling/nlp/document:document-corpus",
-    "//sling/nlp/parser/trainer:transition-generator",
   ],
   alwayslink = 1,
 )

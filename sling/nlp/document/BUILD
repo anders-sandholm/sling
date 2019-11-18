@@ -238,11 +238,8 @@ cc_binary(
 cc_library(
   name = "annotator-components",
   deps = [
-    "//sling/nlp/ner:labeler",
-    "//sling/nlp/ner:anaphora",
-    "//sling/nlp/ner:phrases",
-    "//sling/nlp/ner:relations",
     "//sling/nlp/parser:parser-annotator",
+    "//sling/nlp/silver:annotators",
   ],
 )
 
